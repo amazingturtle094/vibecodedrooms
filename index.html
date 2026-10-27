@@ -1815,13 +1815,14 @@
                 for (const halfWall of halfWalls) {
                     const hx = worldX + Number(halfWall.x || 0);
                     const hz = worldZ + Number(halfWall.z || 0);
-                    addCollider(halfWallPostGeometry, hx, floorY + 0.5, hz);
+                    const hwLevels = integratedEditorGetHalfWallLevels(halfWall);
+                    for (const lvl of hwLevels) addCollider(halfWallPostGeometry, hx, floorY + lvl + 0.5, hz);
                     surfaceOBBs.push({
                         centerX: hx, centerZ: hz, angle: 0,
-                        topY: floorY + 1.2, halfW: 0.16, halfL: 0.16
+                        topY: floorY + hwLevels[hwLevels.length - 1] + 1.2, halfW: 0.16, halfL: 0.16
                     });
                     const registryKey = `${layer}:${hx.toFixed(3)},${hz.toFixed(3)}`;
-                    halfWallCollisionPosts.set(registryKey, { x: hx, z: hz, floorY, layer });
+                    halfWallCollisionPosts.set(registryKey, { x: hx, z: hz, floorY, layer, levels: hwLevels });
                 }
             }
 
@@ -1832,14 +1833,14 @@
                 const xNeighbor = halfWallCollisionPosts.get(`${post.layer}:${(post.x + 1).toFixed(3)},${post.z.toFixed(3)}`);
                 if (xNeighbor && Math.abs(xNeighbor.floorY - post.floorY) < 0.001) {
                     const cx = post.x + 0.5;
-                    addCollider(halfWallConnectorXGeometry, cx, post.floorY + 0.5, post.z);
-                    surfaceOBBs.push({ centerX: cx, centerZ: post.z, angle: 0, topY: post.floorY + 1.0, halfW: 0.34, halfL: 0.16 });
+                    for (const lvl of integratedEditorCommonLevels(post.levels, xNeighbor.levels)) addCollider(halfWallConnectorXGeometry, cx, post.floorY + lvl + 0.5, post.z);
+                    surfaceOBBs.push({ centerX: cx, centerZ: post.z, angle: 0, topY: post.floorY + integratedEditorCommonTop(post.levels, xNeighbor.levels) + 1.0, halfW: 0.34, halfL: 0.16 });
                 }
                 const zNeighbor = halfWallCollisionPosts.get(`${post.layer}:${post.x.toFixed(3)},${(post.z + 1).toFixed(3)}`);
                 if (zNeighbor && Math.abs(zNeighbor.floorY - post.floorY) < 0.001) {
                     const cz = post.z + 0.5;
-                    addCollider(halfWallConnectorZGeometry, post.x, post.floorY + 0.5, cz);
-                    surfaceOBBs.push({ centerX: post.x, centerZ: cz, angle: 0, topY: post.floorY + 1.0, halfW: 0.16, halfL: 0.34 });
+                    for (const lvl of integratedEditorCommonLevels(post.levels, zNeighbor.levels)) addCollider(halfWallConnectorZGeometry, post.x, post.floorY + lvl + 0.5, cz);
+                    surfaceOBBs.push({ centerX: post.x, centerZ: cz, angle: 0, topY: post.floorY + integratedEditorCommonTop(post.levels, zNeighbor.levels) + 1.0, halfW: 0.16, halfL: 0.34 });
                 }
             }
         }
@@ -4933,6 +4934,56 @@
             };
         }
 
+        // ---- Stackable half-wall helpers -------------------------------------
+        function integratedEditorCapBlockedByCeiling(topY, ceilY) {
+            // A cap plank is 0.08 thick; if it would touch/clip the ceiling, drop it.
+            return Number.isFinite(Number(ceilY)) && (Number(ceilY) - Number(topY)) < 0.1;
+        }
+
+        function integratedEditorNormalizeLevels(raw) {
+            let out = [];
+            if (Array.isArray(raw)) {
+                out = raw.map(v => Math.trunc(Number(v))).filter(v => Number.isFinite(v) && v >= 0 && v <= 31);
+            } else if (raw !== null && raw !== undefined && Number.isFinite(Number(raw)) && Number(raw) >= 1) {
+                const n = Math.min(32, Math.trunc(Number(raw)));
+                for (let i = 0; i < n; i += 1) out.push(i);
+            }
+            out = Array.from(new Set(out)).sort((a, b) => a - b);
+            return out.length ? out : [0];
+        }
+
+        function integratedEditorGetHalfWallLevels(halfWall) {
+            return integratedEditorNormalizeLevels(halfWall ? halfWall.lv : undefined);
+        }
+
+        function integratedEditorResolveHalfWallVariant(halfWall, fallbackVariant) {
+            if (halfWall && halfWall.v !== null && halfWall.v !== undefined && Number.isFinite(Number(halfWall.v))) {
+                return Math.max(0, Math.min(3, Math.trunc(Number(halfWall.v))));
+            }
+            return fallbackVariant;
+        }
+
+        function integratedEditorCommonLevels(a, b) {
+            const setB = new Set(b || []);
+            return (a || []).filter(level => setB.has(level));
+        }
+
+        function integratedEditorCommonTop(a, b) {
+            const common = integratedEditorCommonLevels(a, b);
+            return common.length ? common[common.length - 1] : -1;
+        }
+
+        function integratedEditorGetHalfWallStackTop(cell, slotX, slotZ) {
+            if (!cell || !Array.isArray(cell.halfWalls)) return 0;
+            const hw = cell.halfWalls.find(h =>
+                Math.abs(Number(h.x || 0) - Number(slotX)) < 0.01 &&
+                Math.abs(Number(h.z || 0) - Number(slotZ)) < 0.01);
+            if (!hw) return 0;
+            const levels = integratedEditorGetHalfWallLevels(hw);
+            if (!levels.includes(0)) return 0;
+            return levels[levels.length - 1] + 1;
+        }
+
         function integratedEditorNormalizeCell(rawCell, layer = integratedEditorCurrentLayer) {
             if (!rawCell || typeof rawCell !== 'object') {
                 return null;
@@ -4970,7 +5021,7 @@
                 const slotKey = `${hx.toFixed(3)},${hz.toFixed(3)},${orientation}`;
                 if (usedHalfWallSlots.has(slotKey)) continue;
                 usedHalfWallSlots.add(slotKey);
-                normalized.halfWalls.push({ x: hx, z: hz, orientation, v: Number.isFinite(Number(rawHalfWall.v)) ? Math.max(0, Math.min(3, Math.trunc(Number(rawHalfWall.v)))) : null });
+                normalized.halfWalls.push({ x: hx, z: hz, orientation, v: Number.isFinite(Number(rawHalfWall.v)) ? Math.max(0, Math.min(3, Math.trunc(Number(rawHalfWall.v)))) : null, lv: integratedEditorNormalizeLevels(rawHalfWall.lv) });
             }
 
             const sourceLights = Array.isArray(rawCell.lights) ? rawCell.lights : [];
@@ -5095,12 +5146,14 @@
                 if (!cell) return;
 
                 if (cell.h || cell.halfWalls.length) {
-                    const count = Math.max(1, cell.halfWalls.length);
-                    halfWallCount += count;
-                    const variant = cell.halfWalls.length && Number.isFinite(Number(cell.halfWalls[0].v))
-                        ? Math.max(0, Math.min(3, Math.trunc(Number(cell.halfWalls[0].v))))
-                        : getWallVariantFromGrid(countGx, countGz, 17);
-                    halfWallVariantCounts[variant] += count;
+                    const countFallbackVariant = getWallVariantFromGrid(countGx, countGz, 17);
+                    const countHalfWalls = cell.halfWalls.length ? cell.halfWalls : [{ v: null, lv: [0] }];
+                    for (const countHw of countHalfWalls) {
+                        const countLevels = integratedEditorGetHalfWallLevels(countHw).length;
+                        const countVariant = integratedEditorResolveHalfWallVariant(countHw, countFallbackVariant);
+                        halfWallCount += countLevels;
+                        halfWallVariantCounts[countVariant] += countLevels;
+                    }
                 } else if (cell.w) {
                     wallCount += 1;
                     const variant = Number.isFinite(Number(cell.wv))
@@ -5196,8 +5249,8 @@
                 // When four half-wall posts form a 2x2 cluster, fill the center
                 // so it reads as one solid square rather than a hollow outline.
                 const halfWallFillGeometry = new THREE.BoxGeometry(0.68, 1.0, 0.68);
-                const halfWallTopCapRailXGeometry = new THREE.BoxGeometry(0.62, 0.08, 0.38);
-                const halfWallTopCapRailZGeometry = new THREE.BoxGeometry(0.38, 0.08, 0.62);
+                const halfWallTopCapRailXGeometry = new THREE.BoxGeometry(0.31, 0.08, 0.38);
+                const halfWallTopCapRailZGeometry = new THREE.BoxGeometry(0.38, 0.08, 0.31);
                 // Baseboard connectors exactly bridge the gap between 0.38u posts
                 // without overlapping their edges, preventing z-fighting.
                 const halfWallBaseboardRailXGeometry = new THREE.BoxGeometry(0.62, 0.15, 0.38);
@@ -5287,7 +5340,7 @@
                 integratedEditorHalfWallTopCapMesh.userData.editorSharedGeometry = false;
 
                 const halfWallRailCapacity = Math.max(2, halfWallCount * 6 + 8);
-                const halfWallTopCapRailCapacity = Math.max(2, halfWallCount * 6 + 8);
+                const halfWallTopCapRailCapacity = Math.max(2, halfWallCount * 12 + 16);
                 integratedEditorHalfWallRailMeshes = [
                     new THREE.InstancedMesh(halfWallRailXGeometry, integratedEditorMatHalfWallRailXVariants[0] || integratedEditorMatWallVariants[0], halfWallRailCapacity),
                     new THREE.InstancedMesh(halfWallRailZGeometry, integratedEditorMatHalfWallRailZVariants[0] || integratedEditorMatWallVariants[0], halfWallRailCapacity)
@@ -5473,48 +5526,42 @@
                 const worldZ = gz * integratedEditorBlockSize;
 
                 if (cell.h || cell.halfWalls.length) {
-                    const halfWalls = cell.halfWalls.length ? cell.halfWalls : [{ x: 0, z: 0, orientation: integratedEditorGetHalfWallOrientation(gx, gz, layer) }];
+                    const halfWalls = cell.halfWalls.length ? cell.halfWalls : [{ x: 0, z: 0, orientation: integratedEditorGetHalfWallOrientation(gx, gz, layer), v: null, lv: [0] }];
                     const fallbackVariant = getWallVariantFromGrid(gx, gz, 17);
                     for (const halfWall of halfWalls) {
-                        const variant = Number.isFinite(Number(halfWall.v))
-                            ? Math.max(0, Math.min(3, Math.trunc(Number(halfWall.v))))
-                            : fallbackVariant;
+                        const levels = integratedEditorGetHalfWallLevels(halfWall);
+                        const levelSet = new Set(levels);
+                        const variant = integratedEditorResolveHalfWallVariant(halfWall, fallbackVariant);
                         const mesh = integratedEditorHalfWallMeshes.find(item => item.userData.editorVariant === variant) || integratedEditorHalfWallMeshes[0];
                         const halfWallX = worldX + Number(halfWall.x || 0);
                         const halfWallZ = worldZ + Number(halfWall.z || 0);
                         const halfWallFloorY = Number(cell.f || 0);
-                        integratedEditorScratchObject.position.set(halfWallX, halfWallFloorY + 0.5, halfWallZ);
-                        integratedEditorScratchObject.rotation.set(0, 0, 0);
-                        integratedEditorScratchObject.scale.set(1, 1, 1);
-                        integratedEditorScratchObject.updateMatrix();
-                        const vi = Math.max(0, integratedEditorHalfWallMeshes.indexOf(mesh));
-                        const localIndex = halfWallVariantIndices[mesh.userData.editorVariant]++;
-                        mesh.setMatrixAt(localIndex, integratedEditorScratchObject.matrix);
-                        mesh.userData.editorPickData[localIndex] = { gx, gz, layer, localX: Number(halfWall.x || 0), localZ: Number(halfWall.z || 0), floorY: halfWallFloorY, orientation: halfWall.orientation };
 
-                        if (integratedEditorHalfWallBaseboardMesh) {
-                            integratedEditorScratchObject.position.set(halfWallX, halfWallFloorY + 0.075, halfWallZ);
+                        for (const level of levels) {
+                            integratedEditorScratchObject.position.set(halfWallX, halfWallFloorY + level + 0.5, halfWallZ);
                             integratedEditorScratchObject.rotation.set(0, 0, 0);
                             integratedEditorScratchObject.scale.set(1, 1, 1);
                             integratedEditorScratchObject.updateMatrix();
-                            integratedEditorHalfWallBaseboardMesh.setMatrixAt(halfWallBaseboardIndex++, integratedEditorScratchObject.matrix);
+                            const localIndex = halfWallVariantIndices[mesh.userData.editorVariant]++;
+                            mesh.setMatrixAt(localIndex, integratedEditorScratchObject.matrix);
+                            mesh.userData.editorPickData[localIndex] = { gx, gz, layer, localX: Number(halfWall.x || 0), localZ: Number(halfWall.z || 0), floorY: halfWallFloorY, orientation: halfWall.orientation, level };
+
+                            // Baseboard only sits on the floor.
+                            if (level === 0 && integratedEditorHalfWallBaseboardMesh) {
+                                integratedEditorScratchObject.position.set(halfWallX, halfWallFloorY + 0.075, halfWallZ);
+                                integratedEditorScratchObject.updateMatrix();
+                                integratedEditorHalfWallBaseboardMesh.setMatrixAt(halfWallBaseboardIndex++, integratedEditorScratchObject.matrix);
+                            }
+                            // The cap plank only exists where nothing is stacked directly above.
+                            if (!levelSet.has(level + 1) && !integratedEditorCapBlockedByCeiling(halfWallFloorY + level + 1, cell.c) && integratedEditorHalfWallTopCapMesh) {
+                                integratedEditorScratchObject.position.set(halfWallX, halfWallFloorY + level + 1.04, halfWallZ);
+                                integratedEditorScratchObject.updateMatrix();
+                                integratedEditorHalfWallTopCapMesh.setMatrixAt(halfWallTopCapIndex++, integratedEditorScratchObject.matrix);
+                            }
                         }
-                        if (integratedEditorHalfWallTopCapMesh) {
-                            integratedEditorScratchObject.position.set(halfWallX, halfWallFloorY + 1.04, halfWallZ);
-                            integratedEditorScratchObject.rotation.set(0, 0, 0);
-                            integratedEditorScratchObject.scale.set(1, 1, 1);
-                            integratedEditorScratchObject.updateMatrix();
-                            integratedEditorHalfWallTopCapMesh.setMatrixAt(halfWallTopCapIndex++, integratedEditorScratchObject.matrix);
-                        }
-                    }
-                    // Register every post by world-space 1x1 slot. Connections are
-                    // generated after all cells have been visited, so cross-cell
-                    // neighbors work exactly like same-cell neighbors.
-                    for (const hw of halfWalls) {
-                        const postX = worldX + Number(hw.x || 0);
-                        const postZ = worldZ + Number(hw.z || 0);
-                        const postRegistryKey = `${layer}:${postX.toFixed(3)},${postZ.toFixed(3)}`;
-                        halfWallPostRegistry.set(postRegistryKey, { x: postX, z: postZ, floorY: Number(cell.f || 0), layer, variant: Number.isFinite(Number(hw.v)) ? Math.max(0, Math.min(3, Math.trunc(Number(hw.v)))) : fallbackVariant });
+
+                        const postRegistryKey = `${layer}:${halfWallX.toFixed(3)},${halfWallZ.toFixed(3)}`;
+                        halfWallPostRegistry.set(postRegistryKey, { x: halfWallX, z: halfWallZ, floorY: halfWallFloorY, ceilY: Number(cell.c), layer, levels, variant });
                     }
                     // Do not return here: a cell can contain a half-wall AND its
                     // normal floor, ceiling, lights, and pit/terrain geometry.
@@ -5737,26 +5784,51 @@
             }
 
             if (integratedEditorHalfWallRailMeshes.length && halfWallPostRegistry.size > 0) {
-                // Build connections from normalized half-unit coordinates. This avoids
-                // floating-point key mismatches and connects only true 1-world-unit neighbors.
-                let railXIndex = 0;
-                let railZIndex = 0;
-                let topCapRailXIndex = 0;
-                let topCapRailZIndex = 0;
-                let baseboardRailXIndex = 0;
-                let baseboardRailZIndex = 0;
-                const halfWallFillIndices = [0, 0, 0, 0];
-                let halfWallFillBaseboardIndex = 0;
-                let halfWallFillTopCapIndex = 0;
+                // Trim the single-post meshes to what was actually written so unused
+                // instances can never render at the origin.
+                if (integratedEditorHalfWallBaseboardMesh) integratedEditorHalfWallBaseboardMesh.count = halfWallBaseboardIndex;
+                if (integratedEditorHalfWallTopCapMesh) integratedEditorHalfWallTopCapMesh.count = halfWallTopCapIndex;
+
+                let railXIndex = 0, railZIndex = 0;
+                let capXIndex = 0, capZIndex = 0;
+                let baseXIndex = 0, baseZIndex = 0;
+                const fillIndices = [0, 0, 0, 0];
+                let fillBaseIndex = 0;
+                let fillCapIndex = 0;
+
+                const [railXMesh, railZMesh] = integratedEditorHalfWallRailMeshes;
+                const [baseXMesh, baseZMesh] = integratedEditorHalfWallBaseboardRailMeshes;
+                const [capXMesh, capZMesh] = integratedEditorHalfWallTopCapRailMeshes;
+
+                const setInstance = (mesh, index, x, y, z, sx, sy, sz) => {
+                    if (!mesh || index >= mesh.instanceMatrix.count) return false;
+                    const o = integratedEditorScratchObject;
+                    o.position.set(x, y, z);
+                    o.rotation.set(0, 0, 0);
+                    o.scale.set(sx, sy, sz);
+                    o.updateMatrix();
+                    mesh.setMatrixAt(index, o.matrix);
+                    return true;
+                };
+
                 const halfGridCoord = (value) => Math.round(Number(value) * 2);
                 const postKey = (layer, x2, z2) => `${Math.trunc(Number(layer) || 0)}:${x2},${z2}`;
                 const postByKey = new Map();
                 for (const post of halfWallPostRegistry.values()) {
-                    const x2 = halfGridCoord(post.x);
-                    const z2 = halfGridCoord(post.z);
-                    postByKey.set(postKey(post.layer, x2, z2), post);
+                    post.levels = integratedEditorNormalizeLevels(post.levels);
+                    post.levelSet = new Set(post.levels);
+                    postByKey.set(postKey(post.layer, halfGridCoord(post.x), halfGridCoord(post.z)), post);
                 }
 
+                // Connectors between neighbouring posts, per shared level.
+                // Cap blockstate: a connector's top is only covered by the connector
+                // directly above it, which needs a block above BOTH posts.
+                //   nothing above either post  -> full cap
+                //   above only the left post   -> full cap (the exposed half still needs it)
+                //   above only the right post  -> full cap
+                //   above both posts           -> no cap
+                // Also no cap if it would touch the ceiling.
+                const CAP_OFFSET = 0.345; // centre of a 0.31 half-cap measured from its post
                 for (const post of halfWallPostRegistry.values()) {
                     const px2 = halfGridCoord(post.x);
                     const pz2 = halfGridCoord(post.z);
@@ -5764,64 +5836,35 @@
                         { axis: 'x', x2: px2 + 2, z2: pz2 },
                         { axis: 'z', x2: px2, z2: pz2 + 2 }
                     ];
-
                     for (const neighbor of neighbors) {
                         const other = postByKey.get(postKey(post.layer, neighbor.x2, neighbor.z2));
                         if (!other) continue;
+                        const common = integratedEditorCommonLevels(post.levels, other.levels);
                         const floorY = (Number(post.floorY) + Number(other.floorY)) * 0.5;
                         const midX = (Number(post.x) + Number(other.x)) * 0.5;
                         const midZ = (Number(post.z) + Number(other.z)) * 0.5;
 
-                        if (neighbor.axis === 'x') {
-                            const mesh = integratedEditorHalfWallRailMeshes[0];
-                            if (!mesh || railXIndex + 1 > mesh.instanceMatrix.count) continue;
-                            integratedEditorScratchObject.position.set(midX, floorY + 0.5, midZ);
-                            integratedEditorScratchObject.rotation.set(0, 0, 0);
-                            integratedEditorScratchObject.scale.set(1 / 0.68, 1, 1);
-                            integratedEditorScratchObject.updateMatrix();
-                            mesh.setMatrixAt(railXIndex++, integratedEditorScratchObject.matrix);
-                            const baseMesh = integratedEditorHalfWallBaseboardRailMeshes[0];
-                            if (baseMesh && baseboardRailXIndex < baseMesh.instanceMatrix.count) {
-                                integratedEditorScratchObject.position.y = floorY + 0.075;
-                                integratedEditorScratchObject.scale.set(1 / 0.62, 1, 1);
-                                integratedEditorScratchObject.updateMatrix();
-                                baseMesh.setMatrixAt(baseboardRailXIndex++, integratedEditorScratchObject.matrix);
-                            }
-                            const capMesh = integratedEditorHalfWallTopCapRailMeshes[0];
-                            if (capMesh && topCapRailXIndex < capMesh.instanceMatrix.count) {
-                                integratedEditorScratchObject.position.y = floorY + 1.04;
-                                integratedEditorScratchObject.scale.set(1 / 0.62, 1, 1);
-                                integratedEditorScratchObject.updateMatrix();
-                                capMesh.setMatrixAt(topCapRailXIndex++, integratedEditorScratchObject.matrix);
-                            }
-                        } else {
-                            const mesh = integratedEditorHalfWallRailMeshes[1];
-                            if (!mesh || railZIndex + 1 > mesh.instanceMatrix.count) continue;
-                            integratedEditorScratchObject.position.set(midX, floorY + 0.5, midZ);
-                            integratedEditorScratchObject.rotation.set(0, 0, 0);
-                            integratedEditorScratchObject.scale.set(1, 1, 1 / 0.68);
-                            integratedEditorScratchObject.updateMatrix();
-                            mesh.setMatrixAt(railZIndex++, integratedEditorScratchObject.matrix);
-                            const baseMesh = integratedEditorHalfWallBaseboardRailMeshes[1];
-                            if (baseMesh && baseboardRailZIndex < baseMesh.instanceMatrix.count) {
-                                integratedEditorScratchObject.position.y = floorY + 0.075;
-                                integratedEditorScratchObject.scale.set(1, 1, 1 / 0.62);
-                                integratedEditorScratchObject.updateMatrix();
-                                baseMesh.setMatrixAt(baseboardRailZIndex++, integratedEditorScratchObject.matrix);
-                            }
-                            const capMesh = integratedEditorHalfWallTopCapRailMeshes[1];
-                            if (capMesh && topCapRailZIndex < capMesh.instanceMatrix.count) {
-                                integratedEditorScratchObject.position.y = floorY + 1.04;
-                                integratedEditorScratchObject.scale.set(1, 1, 1 / 0.62);
-                                integratedEditorScratchObject.updateMatrix();
-                                capMesh.setMatrixAt(topCapRailZIndex++, integratedEditorScratchObject.matrix);
+                        for (const L of common) {
+                            const capY = floorY + L + 1.04;
+                            const railCapVisible = !(post.levelSet.has(L + 1) && other.levelSet.has(L + 1))
+                                && !integratedEditorCapBlockedByCeiling(floorY + L + 1, Math.min(Number(post.ceilY), Number(other.ceilY)));
+                            if (neighbor.axis === 'x') {
+                                if (setInstance(railXMesh, railXIndex, midX, floorY + L + 0.5, midZ, 1 / 0.68, 1, 1)) railXIndex++;
+                                if (L === 0 && setInstance(baseXMesh, baseXIndex, midX, floorY + 0.075, midZ, 1 / 0.62, 1, 1)) baseXIndex++;
+                                if (railCapVisible && setInstance(capXMesh, capXIndex, Number(post.x) + CAP_OFFSET, capY, Number(post.z), 1, 1, 1)) capXIndex++;
+                                if (railCapVisible && setInstance(capXMesh, capXIndex, Number(other.x) - CAP_OFFSET, capY, Number(other.z), 1, 1, 1)) capXIndex++;
+                            } else {
+                                if (setInstance(railZMesh, railZIndex, midX, floorY + L + 0.5, midZ, 1, 1, 1 / 0.68)) railZIndex++;
+                                if (L === 0 && setInstance(baseZMesh, baseZIndex, midX, floorY + 0.075, midZ, 1, 1, 1 / 0.62)) baseZIndex++;
+                                if (railCapVisible && setInstance(capZMesh, capZIndex, Number(post.x), capY, Number(post.z) + CAP_OFFSET, 1, 1, 1)) capZIndex++;
+                                if (railCapVisible && setInstance(capZMesh, capZIndex, Number(other.x), capY, Number(other.z) - CAP_OFFSET, 1, 1, 1)) capZIndex++;
                             }
                         }
                     }
                 }
 
-                // Four posts at the corners of a 1x1 square form a 2x2 half-wall
-                // cluster. Fill the center gap so the cluster reads as a solid square.
+                // 2x2 clusters: fill the centre at every level where all four posts exist.
+                // Its cap only appears when the fill directly above is missing.
                 for (const post of halfWallPostRegistry.values()) {
                     const x2 = halfGridCoord(post.x);
                     const z2 = halfGridCoord(post.z);
@@ -5835,44 +5878,37 @@
                     const floorY = (Number(p00.floorY) + Number(p10.floorY) + Number(p01.floorY) + Number(p11.floorY)) * 0.25;
                     const variant = Math.max(0, Math.min(3, Number(p00.variant) || 0));
                     const fillMesh = integratedEditorHalfWallFillMeshes[variant];
-                    if (fillMesh && halfWallFillIndices[variant] < fillMesh.instanceMatrix.count) {
-                        integratedEditorScratchObject.position.set(centerX, floorY + 0.5, centerZ);
-                        integratedEditorScratchObject.rotation.set(0, 0, 0);
-                        integratedEditorScratchObject.scale.set(1, 1, 1);
-                        integratedEditorScratchObject.updateMatrix();
-                        fillMesh.setMatrixAt(halfWallFillIndices[variant]++, integratedEditorScratchObject.matrix);
-                    }
-                    if (integratedEditorHalfWallFillBaseboardMesh && halfWallFillBaseboardIndex < integratedEditorHalfWallFillBaseboardMesh.instanceMatrix.count) {
-                        integratedEditorScratchObject.position.set(centerX, floorY + 0.075, centerZ);
-                        integratedEditorScratchObject.updateMatrix();
-                        integratedEditorHalfWallFillBaseboardMesh.setMatrixAt(halfWallFillBaseboardIndex++, integratedEditorScratchObject.matrix);
-                    }
-                    if (integratedEditorHalfWallFillTopCapMesh && halfWallFillTopCapIndex < integratedEditorHalfWallFillTopCapMesh.instanceMatrix.count) {
-                        integratedEditorScratchObject.position.set(centerX, floorY + 1.04, centerZ);
-                        integratedEditorScratchObject.updateMatrix();
-                        integratedEditorHalfWallFillTopCapMesh.setMatrixAt(halfWallFillTopCapIndex++, integratedEditorScratchObject.matrix);
+                    const common = integratedEditorCommonLevels(
+                        integratedEditorCommonLevels(p00.levels, p10.levels),
+                        integratedEditorCommonLevels(p01.levels, p11.levels)
+                    );
+                    const commonSet = new Set(common);
+                    const fillCeil = Math.min(Number(p00.ceilY), Number(p10.ceilY), Number(p01.ceilY), Number(p11.ceilY));
+                    for (const L of common) {
+                        if (fillMesh && setInstance(fillMesh, fillIndices[variant], centerX, floorY + L + 0.5, centerZ, 1, 1, 1)) fillIndices[variant]++;
+                        if (L === 0 && setInstance(integratedEditorHalfWallFillBaseboardMesh, fillBaseIndex, centerX, floorY + 0.075, centerZ, 1, 1, 1)) fillBaseIndex++;
+                        if (!commonSet.has(L + 1) && !integratedEditorCapBlockedByCeiling(floorY + L + 1, fillCeil) && setInstance(integratedEditorHalfWallFillTopCapMesh, fillCapIndex, centerX, floorY + L + 1.04, centerZ, 1, 1, 1)) fillCapIndex++;
                     }
                 }
+
                 integratedEditorHalfWallFillMeshes.forEach((mesh, variant) => {
-                    mesh.count = halfWallFillIndices[variant];
+                    mesh.count = fillIndices[variant];
                     mesh.instanceMatrix.needsUpdate = true;
                     if (mesh.count > 0) integratedEditorGroup.add(mesh);
                 });
                 if (integratedEditorHalfWallFillBaseboardMesh) {
-                    integratedEditorHalfWallFillBaseboardMesh.count = halfWallFillBaseboardIndex;
+                    integratedEditorHalfWallFillBaseboardMesh.count = fillBaseIndex;
                     integratedEditorHalfWallFillBaseboardMesh.instanceMatrix.needsUpdate = true;
-                    if (integratedEditorHalfWallFillBaseboardMesh.count > 0) integratedEditorGroup.add(integratedEditorHalfWallFillBaseboardMesh);
+                    if (fillBaseIndex > 0) integratedEditorGroup.add(integratedEditorHalfWallFillBaseboardMesh);
                 }
                 if (integratedEditorHalfWallFillTopCapMesh) {
-                    integratedEditorHalfWallFillTopCapMesh.count = halfWallFillTopCapIndex;
+                    integratedEditorHalfWallFillTopCapMesh.count = fillCapIndex;
                     integratedEditorHalfWallFillTopCapMesh.instanceMatrix.needsUpdate = true;
-                    if (integratedEditorHalfWallFillTopCapMesh.count > 0) integratedEditorGroup.add(integratedEditorHalfWallFillTopCapMesh);
+                    if (fillCapIndex > 0) integratedEditorGroup.add(integratedEditorHalfWallFillTopCapMesh);
                 }
 
-                // A half-wall endpoint can terminate against either a full wall or
-                // the carpet face of a pit. Treat those boundaries as virtual half-wall
-                // endpoints and fill the actual remaining gap instead of using a fixed
-                // decorative span. This keeps long runs continuous at walls and pits.
+                // Boundary connectors: a post at the edge of a cell that touches a full
+                // wall (or a carpet pit face) bridges the remaining gap, at every level.
                 const addHalfWallBoundaryConnector = (post, axis, boundaryX, boundaryZ) => {
                     const floorY = Number(post.floorY) || 0;
                     const distance = axis === 'x'
@@ -5881,49 +5917,17 @@
                     const bridgeLength = Math.max(0.08, distance + 0.04);
                     const midX = axis === 'x' ? (Number(post.x) + Number(boundaryX)) * 0.5 : Number(post.x);
                     const midZ = axis === 'z' ? (Number(post.z) + Number(boundaryZ)) * 0.5 : Number(post.z);
-                    const railMesh = axis === 'x' ? integratedEditorHalfWallRailMeshes[0] : integratedEditorHalfWallRailMeshes[1];
-                    const baseMesh = axis === 'x' ? integratedEditorHalfWallBaseboardRailMeshes[0] : integratedEditorHalfWallBaseboardRailMeshes[1];
-                    const capMesh = axis === 'x' ? integratedEditorHalfWallTopCapRailMeshes[0] : integratedEditorHalfWallTopCapRailMeshes[1];
-
-                    if (axis === 'x') {
-                        if (railMesh && railXIndex < railMesh.instanceMatrix.count) {
-                            integratedEditorScratchObject.position.set(midX, floorY + 0.5, midZ);
-                            integratedEditorScratchObject.rotation.set(0, 0, 0);
-                            integratedEditorScratchObject.scale.set(bridgeLength / 0.68, 1, 1);
-                            integratedEditorScratchObject.updateMatrix();
-                            railMesh.setMatrixAt(railXIndex++, integratedEditorScratchObject.matrix);
-                        }
-                        if (baseMesh && baseboardRailXIndex < baseMesh.instanceMatrix.count) {
-                            integratedEditorScratchObject.position.set(midX, floorY + 0.075, midZ);
-                            integratedEditorScratchObject.scale.set(bridgeLength / 0.62, 1, 1);
-                            integratedEditorScratchObject.updateMatrix();
-                            baseMesh.setMatrixAt(baseboardRailXIndex++, integratedEditorScratchObject.matrix);
-                        }
-                        if (capMesh && topCapRailXIndex < capMesh.instanceMatrix.count) {
-                            integratedEditorScratchObject.position.set(midX, floorY + 1.04, midZ);
-                            integratedEditorScratchObject.scale.set(bridgeLength / 0.62, 1, 1);
-                            integratedEditorScratchObject.updateMatrix();
-                            capMesh.setMatrixAt(topCapRailXIndex++, integratedEditorScratchObject.matrix);
-                        }
-                    } else {
-                        if (railMesh && railZIndex < railMesh.instanceMatrix.count) {
-                            integratedEditorScratchObject.position.set(midX, floorY + 0.5, midZ);
-                            integratedEditorScratchObject.rotation.set(0, 0, 0);
-                            integratedEditorScratchObject.scale.set(1, 1, bridgeLength / 0.68);
-                            integratedEditorScratchObject.updateMatrix();
-                            railMesh.setMatrixAt(railZIndex++, integratedEditorScratchObject.matrix);
-                        }
-                        if (baseMesh && baseboardRailZIndex < baseMesh.instanceMatrix.count) {
-                            integratedEditorScratchObject.position.set(midX, floorY + 0.075, midZ);
-                            integratedEditorScratchObject.scale.set(1, 1, bridgeLength / 0.62);
-                            integratedEditorScratchObject.updateMatrix();
-                            baseMesh.setMatrixAt(baseboardRailZIndex++, integratedEditorScratchObject.matrix);
-                        }
-                        if (capMesh && topCapRailZIndex < capMesh.instanceMatrix.count) {
-                            integratedEditorScratchObject.position.set(midX, floorY + 1.04, midZ);
-                            integratedEditorScratchObject.scale.set(1, 1, bridgeLength / 0.62);
-                            integratedEditorScratchObject.updateMatrix();
-                            capMesh.setMatrixAt(topCapRailZIndex++, integratedEditorScratchObject.matrix);
+                    for (const L of post.levels) {
+                        const capY = floorY + L + 1.042; // tiny lift vs. the post cap to avoid z-fighting
+                        const capVisible = !post.levelSet.has(L + 1) && !integratedEditorCapBlockedByCeiling(floorY + L + 1, post.ceilY);
+                        if (axis === 'x') {
+                            if (setInstance(railXMesh, railXIndex, midX, floorY + L + 0.5, midZ, bridgeLength / 0.68, 1, 1)) railXIndex++;
+                            if (L === 0 && setInstance(baseXMesh, baseXIndex, midX, floorY + 0.075, midZ, bridgeLength / 0.62, 1, 1)) baseXIndex++;
+                            if (capVisible && setInstance(capXMesh, capXIndex, midX, capY, midZ, bridgeLength / 0.31, 1, 1)) capXIndex++;
+                        } else {
+                            if (setInstance(railZMesh, railZIndex, midX, floorY + L + 0.5, midZ, 1, 1, bridgeLength / 0.68)) railZIndex++;
+                            if (L === 0 && setInstance(baseZMesh, baseZIndex, midX, floorY + 0.075, midZ, 1, 1, bridgeLength / 0.62)) baseZIndex++;
+                            if (capVisible && setInstance(capZMesh, capZIndex, midX, capY, midZ, 1, 1, bridgeLength / 0.31)) capZIndex++;
                         }
                     }
                 };
@@ -5948,12 +5952,12 @@
 
                     for (const check of boundaryChecks) {
                         if (!check.at) continue;
-                        const neighbor = integratedEditorGetCell(gx + check.neighbor[0], gz + check.neighbor[1], layer);
+                        const neighborCell = integratedEditorGetCell(gx + check.neighbor[0], gz + check.neighbor[1], layer);
                         const edgeKey = check.side > 0
                             ? (check.axis === 'x' ? 'px' : 'pz')
                             : (check.axis === 'x' ? 'nx' : 'nz');
-                        const hasFullWall = Boolean(neighbor && neighbor.w);
-                        const neighborFloor = neighbor && Number.isFinite(Number(neighbor.f)) ? Number(neighbor.f) : null;
+                        const hasFullWall = Boolean(neighborCell && neighborCell.w);
+                        const neighborFloor = neighborCell && Number.isFinite(Number(neighborCell.f)) ? Number(neighborCell.f) : null;
                         const isCarpetPitBoundary = !hasFullWall
                             && neighborFloor !== null
                             && neighborFloor > Number(cell.f || 0) + 0.001
@@ -5965,52 +5969,19 @@
                     }
                 }
 
-                if (integratedEditorHalfWallRailMeshes[0]) {
-                    integratedEditorHalfWallRailMeshes[0].count = railXIndex;
-                    integratedEditorHalfWallRailMeshes[0].instanceMatrix.needsUpdate = true;
-                }
-                    if (integratedEditorHalfWallRailMeshes[1]) {
-                    integratedEditorHalfWallRailMeshes[1].count = railZIndex;
-                    integratedEditorHalfWallRailMeshes[1].instanceMatrix.needsUpdate = true;
-                }
-                if (integratedEditorHalfWallTopCapRailMeshes[0]) {
-                    integratedEditorHalfWallTopCapRailMeshes[0].count = topCapRailXIndex;
-                    integratedEditorHalfWallTopCapRailMeshes[0].instanceMatrix.needsUpdate = true;
-                }
-                if (integratedEditorHalfWallTopCapRailMeshes[1]) {
-                    integratedEditorHalfWallTopCapRailMeshes[1].count = topCapRailZIndex;
-                    integratedEditorHalfWallTopCapRailMeshes[1].instanceMatrix.needsUpdate = true;
-                }
+                const finishRail = (mesh, count) => {
+                    if (!mesh) return;
+                    mesh.count = count;
+                    mesh.instanceMatrix.needsUpdate = true;
+                    if (count > 0) integratedEditorGroup.add(mesh);
+                };
+                finishRail(railXMesh, railXIndex);
+                finishRail(railZMesh, railZIndex);
+                finishRail(capXMesh, capXIndex);
+                finishRail(capZMesh, capZIndex);
+                finishRail(baseXMesh, baseXIndex);
+                finishRail(baseZMesh, baseZIndex);
 
-                if (integratedEditorHalfWallBaseboardRailMeshes[0]) {
-                    integratedEditorHalfWallBaseboardRailMeshes[0].count = baseboardRailXIndex;
-                    integratedEditorHalfWallBaseboardRailMeshes[0].instanceMatrix.needsUpdate = true;
-                }
-                if (integratedEditorHalfWallBaseboardRailMeshes[1]) {
-                    integratedEditorHalfWallBaseboardRailMeshes[1].count = baseboardRailZIndex;
-                    integratedEditorHalfWallBaseboardRailMeshes[1].instanceMatrix.needsUpdate = true;
-                }
-
-                // The rail meshes must actually be part of the editor scene.
-                // Previously they were populated but never added, which made
-                // adjacent half-wall posts look like isolated posts.
-                integratedEditorHalfWallRailMeshes.forEach(mesh => {
-                    if (mesh && mesh.count > 0) {
-                        integratedEditorGroup.add(mesh);
-                    }
-                });                integratedEditorHalfWallTopCapRailMeshes.forEach(mesh => {
-                    if (mesh && mesh.count > 0) {
-                        integratedEditorGroup.add(mesh);
-                    }
-                });
-                integratedEditorHalfWallBaseboardRailMeshes.forEach(mesh => {
-                    if (mesh && mesh.count > 0) {
-                        integratedEditorGroup.add(mesh);
-                    }
-                });
-
-                // Recompute bounds after all half-wall instance matrices are written.
-                // This is important for shadow-map culling as well as camera culling.
                 [
                     ...integratedEditorHalfWallMeshes,
                     integratedEditorHalfWallBaseboardMesh,
@@ -7378,8 +7349,25 @@
                     const existingIndex = cell.halfWalls.findIndex(hw => `${Number(hw.x || 0).toFixed(3)},${Number(hw.z || 0).toFixed(3)}` === slotKey);
                     if (action === 'left') {
                         if (existingIndex >= 0) {
-                            cell.halfWalls[existingIndex].orientation = orientation;
-                            integratedEditorShowToast(`HALF-WALL ROTATED ${key}`);
+                            const hwEntry = cell.halfWalls[existingIndex];
+                            const hwLevels = integratedEditorGetHalfWallLevels(hwEntry);
+                            let halfWallLeftMessage;
+                            if (!hwLevels.includes(0)) {
+                                // Nothing at floor level: place normally, never auto-extend.
+                                hwLevels.unshift(0);
+                                hwEntry.lv = hwLevels;
+                                halfWallLeftMessage = `HALF-WALL PLACED NORMALLY ${key}`;
+                            } else {
+                                const nextLevel = hwLevels[hwLevels.length - 1] + 1;
+                                if (Number(cell.f || 0) + nextLevel + 1 > Number(cell.c) + 0.001) {
+                                    integratedEditorShowToast('CEILING REACHED / CANNOT STACK HIGHER');
+                                    return false;
+                                }
+                                hwLevels.push(nextLevel);
+                                hwEntry.lv = hwLevels;
+                                halfWallLeftMessage = `HALF-WALL STACKED / LEVEL ${nextLevel + 1} ${key}`;
+                            }
+                            integratedEditorShowToast(halfWallLeftMessage);
                         } else {
                             cell.halfWalls.push({ x: slotX, z: slotZ, orientation, v: integratedEditorWallWallpaperIndex });
                             integratedEditorShowToast(`HALF-WALL PLACED ${key} [${slotX.toFixed(1)}, ${slotZ.toFixed(1)}]`);
@@ -7388,9 +7376,18 @@
                         return true;
                     }
                     if (existingIndex >= 0) {
-                        cell.halfWalls.splice(existingIndex, 1);
+                        {
+                            // Erase bottom-first; anything above stays where it is.
+                            const removeLevels = integratedEditorGetHalfWallLevels(cell.halfWalls[existingIndex]);
+                            removeLevels.shift();
+                            if (removeLevels.length) {
+                                cell.halfWalls[existingIndex].lv = removeLevels;
+                            } else {
+                                cell.halfWalls.splice(existingIndex, 1);
+                            }
+                        }
                         if (!cell.halfWalls.length) delete cell.halfWalls;
-                        integratedEditorShowToast(`HALF-WALL REMOVED ${key}`);
+                        integratedEditorShowToast(`HALF-WALL REMOVED / BOTTOM FIRST ${key}`);
                         return true;
                     }
                     integratedEditorShowToast('NO HALF-WALL AT QUARTER TILE');
