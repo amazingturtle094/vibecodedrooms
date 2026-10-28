@@ -544,7 +544,7 @@
         <div class="pause-actions">
             <button type="button" id="pause-resume-button" class="pause-primary">RESUME / LOCK MOUSE</button>
             <button type="button" id="pause-reload-lights-button">REBUILD LIGHTS</button>
-            <button type="button" id="pause-recalculate-shadows-button">REBUILD LIGHTS</button>
+            <button type="button" id="pause-recalculate-shadows-button">RECALCULATE SHADOWS</button>
             <button type="button" id="pause-toggle-pixelation-button">PIXELATING SHADER: ON</button>
             <button type="button" id="pause-return-menu-button">BACK TO MENU</button>
         </div>
@@ -574,7 +574,7 @@
             <div class="editor-section-title">TOOLS / NUMBER KEYS</div>
             <div class="editor-tool-grid">
                 <button type="button" class="editor-tool-button editor-tool-active" data-editor-tool="1">[1] STRUCTURE<br>FLOOR / CEILING</button>
-                <button type="button" class="editor-tool-button" data-editor-tool="2">[2] HEIGHT / DIM<br>SHIFT = 0.25</button>
+                <button type="button" class="editor-tool-button" data-editor-tool="2">[2] HEIGHT / DIM<br>SHIFT = 3x</button>
                 <button type="button" class="editor-tool-button" data-editor-tool="3">[3] WALLS<br>ADD / REMOVE</button>
                 <button type="button" class="editor-tool-button" data-editor-tool="4">[4] LIGHTS<br>ADD / COLOR</button>
             </div>
@@ -582,7 +582,7 @@
 
         <div class="editor-section">
             <div class="editor-section-title">MOUSE / FLY MODE</div>
-            <div class="editor-status-box">L-CLICK applies the active tool. R-CLICK reverses/removes. W/A/S/D flies. SHIFT speeds up. Single-level editor: floor switching and stairs are removed. [G] TOGGLES FULLBRIGHT. LIGHTS use a separate 1-unit grid (1/4 of the 4-unit structure cell). Lights: Yellow → White → Green → Blue → Red. Wheel = color, Shift + Wheel = dimness. Walls: Lines → Dotted → Original → Blank. Wheel = wallpaper.</div>
+            <div class="editor-status-box">L-CLICK applies the active tool. R-CLICK reverses/removes. W/A/S/D flies. SHIFT speeds up. Single-level editor: floor switching and stairs are removed. [G] TOGGLES FULLBRIGHT. LIGHTS use a separate 1-unit grid (1/4 of a structure tile). Lights: Yellow → White → Green → Blue → Red. Wheel = color, Shift + Wheel = dimness. WALLS: click tool 3 again to cycle Full → Half → Quarter walls. Wheel = wallpaper. Height tool: hold SHIFT to change height by 3 units per click.</div>
             <div class="editor-action-row">
                 <button type="button" id="editor-resume-integrated" class="editor-action-button editor-action-primary">RESUME / LOCK MOUSE</button>
                 <button type="button" id="editor-exit-integrated" class="editor-action-button editor-action-danger">EXIT MAP MAKER</button>
@@ -639,7 +639,7 @@
             </div>
             <div class="editor-action-row">
                 <button type="button" id="editor-rebuild-integrated" class="editor-action-button editor-action-primary">REBUILD MAP</button>
-                <button type="button" id="editor-recalculate-shadows-integrated" class="editor-action-button">REBUILD LIGHTS</button>
+                <button type="button" id="editor-recalculate-shadows-integrated" class="editor-action-button">REFRESH LIGHTS</button>
             </div>
             <div class="editor-action-row">
                 <button type="button" id="editor-toggle-pixelation-integrated" class="editor-action-button">PIXELATING SHADER: ON</button>
@@ -1010,7 +1010,8 @@
             flashlight = new THREE.SpotLight( 0xffffee, 0.0, 20, Math.PI / 6, 0.5, 1 );
             flashlight.position.set(0, 0, 0);
             flashlight.castShadow = true;
-            flashlight.shadow.bias = -0.002;
+            flashlight.shadow.bias = -0.0005;
+            flashlight.shadow.normalBias = 0.025;
             flashlight.shadow.mapSize.width = 1024;
             flashlight.shadow.mapSize.height = 1024;
             scene.add( flashlight );
@@ -1289,6 +1290,7 @@
             generatorFunc(ctx);
             
             const tex = new THREE.CanvasTexture(canvas);
+            tex.colorSpace = THREE.SRGBColorSpace;
             tex.magFilter = THREE.NearestFilter;
             tex.minFilter = THREE.NearestFilter;
             tex.wrapS = THREE.RepeatWrapping;
@@ -1433,6 +1435,7 @@
             const ctx = canvas.getContext('2d');
             genFunc(ctx);
             const tex = new THREE.CanvasTexture(canvas);
+            tex.colorSpace = THREE.SRGBColorSpace;
             tex.magFilter = THREE.NearestFilter;
             tex.minFilter = THREE.NearestFilter;
             tex.wrapS = THREE.RepeatWrapping;
@@ -1490,6 +1493,7 @@
             const ctx = canvas.getContext('2d');
             variant.genFunc(ctx);
             const tex = new THREE.CanvasTexture(canvas);
+            tex.colorSpace = THREE.SRGBColorSpace;
             tex.magFilter = THREE.NearestFilter;
             tex.minFilter = THREE.NearestFilter;
             tex.wrapS = THREE.RepeatWrapping;
@@ -1762,10 +1766,12 @@
             // This keeps touch boxes aligned with what the player actually sees.
             const halfWallPostGeometry = new THREE.BoxGeometry(0.32, 1.0, 0.32);
             halfWallPostGeometry.computeBoundingBox();
-            const halfWallConnectorXGeometry = new THREE.BoxGeometry(0.68, 1.0, 0.32);
+            const halfWallConnectorXGeometry = new THREE.BoxGeometry(0.66, 1.0, 0.32);
             halfWallConnectorXGeometry.computeBoundingBox();
-            const halfWallConnectorZGeometry = new THREE.BoxGeometry(0.32, 1.0, 0.68);
+            const halfWallConnectorZGeometry = new THREE.BoxGeometry(0.32, 1.0, 0.66);
             halfWallConnectorZGeometry.computeBoundingBox();
+            const quarterWallGeometry = new THREE.BoxGeometry(1.0, 1.0, 1.0);
+            quarterWallGeometry.computeBoundingBox();
             const dummy = new THREE.Object3D();
             const halfWallCollisionPosts = new Map();
 
@@ -1823,6 +1829,18 @@
                     });
                     const registryKey = `${layer}:${hx.toFixed(3)},${hz.toFixed(3)}`;
                     halfWallCollisionPosts.set(registryKey, { x: hx, z: hz, floorY, layer, levels: hwLevels });
+                }
+
+                for (const quarterWall of (Array.isArray(cell.quarterWalls) ? cell.quarterWalls : [])) {
+                    const qx = worldX + Number(quarterWall.x || 0);
+                    const qz = worldZ + Number(quarterWall.z || 0);
+                    const levels = integratedEditorGetQuarterWallLevels(quarterWall);
+                    for (const level of levels) addCollider(quarterWallGeometry, qx, floorY + level + 0.5, qz);
+                    surfaceOBBs.push({
+                        centerX: qx, centerZ: qz, angle: 0,
+                        topY: floorY + levels[levels.length - 1] + 1.2,
+                        halfW: 0.5, halfL: 0.5
+                    });
                 }
             }
 
@@ -3476,6 +3494,7 @@
         const integratedEditorWallpaperNames = ['Lines', 'Dotted', 'Original', 'Blank'];
         const integratedEditorLightColorNames = ['Yellow', 'White', 'Green', 'Blue', 'Red'];
         let integratedEditorHalfWallMode = false;
+        let integratedEditorQuarterWallMode = false;
         let integratedEditorStairMode = false;
         let integratedEditorLastCell = null;
         let integratedEditorLastTargetType = 'void';
@@ -3509,12 +3528,11 @@
         let integratedEditorWallMesh = null;
         let integratedEditorWallMeshes = [];
         let integratedEditorWallBaseboardMesh = null;
-        let integratedEditorWallShadowMeshes = [];
-        let integratedEditorWallVisualMeshes = [];
-        let integratedEditorWallShadowMaterial = null;
-        let integratedEditorWallShadowDepthMaterial = null;
-        let integratedEditorWallShadowDistanceMaterial = null;
         let integratedEditorHalfWallMesh = null;
+        let integratedEditorQuarterWallMeshes = [];
+        let integratedEditorQuarterWallPickData = [];
+        let integratedEditorQuarterWallBaseboardXMesh = null;
+        let integratedEditorQuarterWallBaseboardZMesh = null;
         let integratedEditorHalfWallRailMeshes = [];
         let integratedEditorHalfWallMeshes = [];
         let integratedEditorHalfWallBaseboardMesh = null;
@@ -3551,6 +3569,7 @@
         let integratedEditorMatWall = null;
         let integratedEditorMatWallVariants = [];
         let integratedEditorMatHalfWallVariants = [];
+        let integratedEditorMatQuarterWallVariants = [];
         let integratedEditorMatHalfWallRailXVariants = [];
         let integratedEditorMatHalfWallRailZVariants = [];
         let integratedEditorMatBaseboard = null;
@@ -3624,6 +3643,7 @@
             }
 
             const floorTexture = new THREE.CanvasTexture(floorCanvas);
+            floorTexture.colorSpace = THREE.SRGBColorSpace;
             floorTexture.magFilter = THREE.NearestFilter;
             floorTexture.minFilter = THREE.NearestFilter;
             floorTexture.wrapS = THREE.RepeatWrapping;
@@ -3675,6 +3695,7 @@
             }
 
             const ceilTexture = new THREE.CanvasTexture(ceilCanvas);
+            ceilTexture.colorSpace = THREE.SRGBColorSpace;
             ceilTexture.magFilter = THREE.NearestFilter;
             ceilTexture.minFilter = THREE.NearestFilter;
             ceilTexture.wrapS = THREE.RepeatWrapping;
@@ -3711,6 +3732,7 @@
             for (let i = 4; i < 60; i += 8) editorVentCtx.fillRect(i, 8, 4, 48);
             applyNoise(editorVentCtx, 64, 64, 20);
             const editorVentTexture = new THREE.CanvasTexture(editorVentCanvas);
+            editorVentTexture.colorSpace = THREE.SRGBColorSpace;
             editorVentTexture.magFilter = THREE.NearestFilter;
             editorVentTexture.minFilter = THREE.NearestFilter;
             integratedEditorMatVent = new THREE.MeshStandardMaterial({
@@ -3736,6 +3758,7 @@
             }
 
             const wallTexture = new THREE.CanvasTexture(wallCanvas);
+            wallTexture.colorSpace = THREE.SRGBColorSpace;
             wallTexture.magFilter = THREE.NearestFilter;
             wallTexture.minFilter = THREE.NearestFilter;
             wallTexture.wrapS = THREE.RepeatWrapping;
@@ -3763,6 +3786,15 @@
                 createWallMaterialVariant(1, 0.32, 1.0),
                 createWallMaterialVariant(2, 0.32, 1.0),
                 createWallMaterialVariant(3, 0.32, 1.0)
+            ];
+            // A quarter-wall is a true 1x1 block, not a 0.32-wide half-wall post.
+            // Give it a one-world-unit texture repeat on every face so the wallpaper
+            // stays at the correct physical scale instead of being stretched.
+            integratedEditorMatQuarterWallVariants = [
+                createWallMaterialVariant(0, 1.0, 1.0),
+                createWallMaterialVariant(1, 1.0, 1.0),
+                createWallMaterialVariant(2, 1.0, 1.0),
+                createWallMaterialVariant(3, 1.0, 1.0)
             ];
             integratedEditorMatHalfWallRailXVariants = [
                 createWallMaterialVariant(0, 1.02, 1.0),
@@ -4034,7 +4066,11 @@
             }
 
             if (shadowRecalcButton) {
-                shadowRecalcButton.addEventListener('click', () => integratedEditorRecalculateShadows());
+                shadowRecalcButton.addEventListener('click', () => {
+                    integratedEditorBuildPointLights(true);
+                    integratedEditorUpdateTargetPreview();
+                    integratedEditorShowToast('EDITOR LIGHTS UPDATED / SHADOWS DISABLED');
+                });
             }
             if (pauseShadowRecalcButton) {
                 pauseShadowRecalcButton.addEventListener('click', () => integratedEditorRecalculateShadows());
@@ -4054,19 +4090,20 @@
                 button.addEventListener('click', () => {
                     const tool = Number(button.getAttribute('data-editor-tool'));
                     if (tool === 3 && integratedEditorActiveTool === 3) {
-                        integratedEditorHalfWallMode = !integratedEditorHalfWallMode;
-                        integratedEditorStairMode = false;
+                        integratedEditorCycleWallMode();
                         integratedEditorUpdateGridVisibility();
+                        integratedEditorUpdateEditorPlane();
                         integratedEditorUpdateTargetPreview();
                         integratedEditorRefreshUi();
-                        integratedEditorShowToast(
-                            integratedEditorStairMode ? 'STAIRCASE MODE ON / 4x4 TILE'
-                                : integratedEditorHalfWallMode ? 'HALF-WALL MODE ON / 1x1 GRID'
-                                : 'FULL-WALL MODE ON / 4x4 GRID'
-                        );
+                        integratedEditorShowToast(`${integratedEditorGetWallModeName()} MODE ON`);
                     } else {
-                        if (tool !== 3) {
+                        if (tool === 3) {
                             integratedEditorHalfWallMode = false;
+                            integratedEditorQuarterWallMode = false;
+                            integratedEditorStairMode = false;
+                        } else {
+                            integratedEditorHalfWallMode = false;
+                            integratedEditorQuarterWallMode = false;
                             integratedEditorStairMode = false;
                         }
                         integratedEditorSetTool(tool);
@@ -4218,20 +4255,18 @@
 
             if (event.code === 'Digit3') {
                 if (integratedEditorActiveTool !== 3) {
-                    integratedEditorSetTool(3);
                     integratedEditorHalfWallMode = false;
+                    integratedEditorQuarterWallMode = false;
+                    integratedEditorStairMode = false;
+                    integratedEditorSetTool(3);
                 } else {
-                    integratedEditorHalfWallMode = !integratedEditorHalfWallMode;
+                    integratedEditorCycleWallMode();
                 }
-                integratedEditorStairMode = false;
                 integratedEditorUpdateGridVisibility();
+                integratedEditorUpdateEditorPlane();
                 integratedEditorUpdateTargetPreview();
                 integratedEditorRefreshUi();
-                integratedEditorShowToast(
-                    integratedEditorStairMode ? 'STAIRCASE MODE ON / 4x4 TILE'
-                        : integratedEditorHalfWallMode ? 'HALF-WALL MODE ON / 1x1 GRID'
-                        : 'FULL-WALL MODE ON / 4x4 GRID'
-                );
+                integratedEditorShowToast(`${integratedEditorGetWallModeName()} MODE ON`);
                 event.preventDefault();
                 event.stopImmediatePropagation();
                 return;
@@ -4540,7 +4575,7 @@
             }
             // Half-wall mode is floor-only. Use the live target floor value, not
             // the camera/layer ceiling, and do not inherit a previous ceiling hit.
-            if (integratedEditorActiveTool === 3 && integratedEditorHalfWallMode) {
+            if (integratedEditorActiveTool === 3 && integratedEditorIsSubTileWallMode()) {
                 const floorCandidate = Number(integratedEditorLastTargetFloorY);
                 gridY = Number.isFinite(floorCandidate)
                     ? floorCandidate
@@ -4576,7 +4611,7 @@
                 return;
             }
 
-            const showQuarterGrid = integratedEditorActiveTool === 4 || (integratedEditorActiveTool === 3 && integratedEditorHalfWallMode);
+            const showQuarterGrid = integratedEditorActiveTool === 4 || (integratedEditorActiveTool === 3 && integratedEditorIsSubTileWallMode());
             if (integratedEditorGrid) integratedEditorGrid.visible = !integratedEditorGridHidden && !showQuarterGrid;
             if (integratedEditorLightGrid) integratedEditorLightGrid.visible = !integratedEditorGridHidden && showQuarterGrid;
         }
@@ -4598,6 +4633,15 @@
 
         function integratedEditorSetMode(enabled) {
             integratedEditorMode = Boolean(enabled);
+
+            // The map maker is intentionally shadow-free: disable the renderer's
+            // shadow pass for every editor frame, then restore normal gameplay
+            // shadows on exit. Editor lights are rebuilt below with castShadow off.
+            if (renderer && renderer.shadowMap) {
+                renderer.shadowMap.enabled = !integratedEditorMode;
+                if (integratedEditorMode) renderer.shadowMap.needsUpdate = false;
+            }
+            if (integratedEditorGroup) integratedEditorBuildPointLights();
 
             if (integratedEditorGroup) {
                 integratedEditorGroup.visible = integratedEditorMode || (!integratedEditorMode && integratedEditorCustomCartographyActive);
@@ -4641,7 +4685,7 @@
             }
 
             integratedEditorActiveTool = toolNumber;
-            if (toolNumber !== 3) { integratedEditorHalfWallMode = false; integratedEditorStairMode = false; }
+            if (toolNumber !== 3) { integratedEditorHalfWallMode = false; integratedEditorQuarterWallMode = false; integratedEditorStairMode = false; }
             integratedEditorUpdateGridVisibility();
             integratedEditorUpdateEditorPlane();
 
@@ -4649,10 +4693,10 @@
             toolButtons.forEach(button => {
                 const buttonTool = Number(button.getAttribute('data-editor-tool'));
                 button.classList.toggle('editor-tool-active', buttonTool === toolNumber);
-                if (buttonTool === 3) button.innerHTML = `[3] WALLS [${integratedEditorGetWallpaperName().toUpperCase()}]<br>ADD / REMOVE`;
+                if (buttonTool === 3) button.innerHTML = `[3] WALLS [${integratedEditorGetWallpaperName().toUpperCase()}]<br>${integratedEditorGetWallModeName()} MODE`;
                 else if (buttonTool === 4) button.innerHTML = `[4] LIGHTS [${integratedEditorLightColorNames[integratedEditorLightColorIndex].toUpperCase()}] [${integratedEditorLightDimness}x]<br>ADD / COLOR`;
                 else if (buttonTool === 1) button.innerHTML = '[1] STRUCTURE<br>FLOOR / CEILING';
-                else if (buttonTool === 2) button.innerHTML = '[2] HEIGHT / DIM<br>SHIFT = 0.25';
+                else if (buttonTool === 2) button.innerHTML = '[2] HEIGHT / DIM<br>SHIFT = 3x';
             });
 
             integratedEditorRefreshUi();
@@ -4682,7 +4726,7 @@
                     return 'FLOOR/CEIL: L/R HEIGHT | LIGHT: L/R DIM | H: HIDE GRID';
                 case 3:
                     if (integratedEditorStairMode) return 'STAIR MODE: L-CLICK PLACE / R-CLICK REMOVE | 4U RISE / OPEN SIDE FACES VIEWER';
-                    return integratedEditorHalfWallMode ? 'HALF-WALL MODE: L-CLICK PLACE / R-CLICK REMOVE (1x1 GRID) | H: HIDE GRID' : 'L-CLICK ADD WALL / R-CLICK REMOVE WALL | TOOL 3 AGAIN: HALF-WALLS ↔ FULL WALL | H: HIDE GRID';
+                    return integratedEditorQuarterWallMode ? 'QUARTER-WALL MODE: L-CLICK PLACE / R-CLICK REMOVE (1x1 BLOCKS) | TOOL 3 AGAIN: FULL → HALF → QUARTER' : integratedEditorHalfWallMode ? 'HALF-WALL MODE: L-CLICK PLACE / R-CLICK REMOVE (1x1 GRID) | TOOL 3 AGAIN: FULL → HALF → QUARTER' : 'FULL-WALL MODE: L-CLICK ADD / R-CLICK REMOVE (4x4 TILE) | TOOL 3 AGAIN: FULL → HALF → QUARTER';
                 case 4:
                     return 'L-CLICK ADD/CYCLE COLOR / R-CLICK REMOVE | H: HIDE GRID';
                 default:
@@ -4731,7 +4775,7 @@
 
             document.querySelectorAll('[data-editor-tool]').forEach(button => {
                 const buttonTool = Number(button.getAttribute('data-editor-tool'));
-                if (buttonTool === 3) button.innerHTML = `[3] WALLS [${integratedEditorGetWallpaperName().toUpperCase()}]<br>ADD / REMOVE`;
+                if (buttonTool === 3) button.innerHTML = `[3] WALLS [${integratedEditorGetWallpaperName().toUpperCase()}]<br>${integratedEditorGetWallModeName()} MODE`;
                 else if (buttonTool === 4) button.innerHTML = `[4] LIGHTS [${integratedEditorLightColorNames[integratedEditorLightColorIndex].toUpperCase()}] [${integratedEditorLightDimness}x]<br>ADD / COLOR`;
             });
 
@@ -4930,6 +4974,8 @@
                 w: false,
                 l: false,
                 d: 0,
+                halfWalls: [],
+                quarterWalls: [],
                 lights: []
             };
         }
@@ -4954,6 +5000,34 @@
 
         function integratedEditorGetHalfWallLevels(halfWall) {
             return integratedEditorNormalizeLevels(halfWall ? halfWall.lv : undefined);
+        }
+
+        function integratedEditorGetQuarterWallLevels(quarterWall) {
+            return integratedEditorNormalizeLevels(quarterWall ? quarterWall.lv : undefined);
+        }
+
+        function integratedEditorIsSubTileWallMode() {
+            return integratedEditorHalfWallMode || integratedEditorQuarterWallMode;
+        }
+
+        function integratedEditorGetWallModeName() {
+            if (integratedEditorStairMode) return 'STAIRS';
+            if (integratedEditorQuarterWallMode) return 'QUARTER WALL';
+            if (integratedEditorHalfWallMode) return 'HALF-WALL';
+            return 'FULL WALL';
+        }
+
+        function integratedEditorCycleWallMode() {
+            integratedEditorStairMode = false;
+            if (!integratedEditorHalfWallMode && !integratedEditorQuarterWallMode) {
+                integratedEditorHalfWallMode = true;
+            } else if (integratedEditorHalfWallMode) {
+                integratedEditorHalfWallMode = false;
+                integratedEditorQuarterWallMode = true;
+            } else {
+                integratedEditorQuarterWallMode = false;
+                integratedEditorHalfWallMode = false;
+            }
         }
 
         function integratedEditorResolveHalfWallVariant(halfWall, fallbackVariant) {
@@ -4997,6 +5071,7 @@
                 wv: Number.isFinite(Number(rawCell.wv)) ? Math.max(0, Math.min(3, Math.trunc(Number(rawCell.wv)))) : null,
                 h: Boolean(rawCell.h || rawCell.halfWall || rawCell.hw),
                 halfWalls: [],
+                quarterWalls: [],
                 stairs: rawCell.stairs && typeof rawCell.stairs === 'object'
                     ? { direction: ['px','nx','pz','nz'].includes(String(rawCell.stairs.direction)) ? String(rawCell.stairs.direction) : 'pz' }
                     : (rawCell.stairDirection && ['px','nx','pz','nz'].includes(String(rawCell.stairDirection)) ? { direction: String(rawCell.stairDirection) } : null),
@@ -5022,6 +5097,22 @@
                 if (usedHalfWallSlots.has(slotKey)) continue;
                 usedHalfWallSlots.add(slotKey);
                 normalized.halfWalls.push({ x: hx, z: hz, orientation, v: Number.isFinite(Number(rawHalfWall.v)) ? Math.max(0, Math.min(3, Math.trunc(Number(rawHalfWall.v)))) : null, lv: integratedEditorNormalizeLevels(rawHalfWall.lv) });
+            }
+
+            const sourceQuarterWalls = Array.isArray(rawCell.quarterWalls) ? rawCell.quarterWalls : [];
+            const usedQuarterWallSlots = new Set();
+            for (const rawQuarterWall of sourceQuarterWalls) {
+                if (!rawQuarterWall || typeof rawQuarterWall !== 'object') continue;
+                const qx = Number.isFinite(Number(rawQuarterWall.x)) ? Number(rawQuarterWall.x) : 0;
+                const qz = Number.isFinite(Number(rawQuarterWall.z)) ? Number(rawQuarterWall.z) : 0;
+                const slotKey = `${qx.toFixed(3)},${qz.toFixed(3)}`;
+                if (usedQuarterWallSlots.has(slotKey)) continue;
+                usedQuarterWallSlots.add(slotKey);
+                normalized.quarterWalls.push({
+                    x: qx, z: qz,
+                    v: Number.isFinite(Number(rawQuarterWall.v)) ? Math.max(0, Math.min(3, Math.trunc(Number(rawQuarterWall.v)))) : null,
+                    lv: integratedEditorNormalizeLevels(rawQuarterWall.lv)
+                });
             }
 
             const sourceLights = Array.isArray(rawCell.lights) ? rawCell.lights : [];
@@ -5104,9 +5195,9 @@
             integratedEditorClearRenderedWorld();
             integratedEditorApplyAutomaticWallConnections();
 
-            // Floors are shallow solid slabs instead of one-sided planes.
-            // That gives raised/extruded floors real volume so they can both
-            // receive illumination and cast shadows onto the space below.
+            // Floors are shallow solid slabs instead of one-sided planes so
+            // raised/extruded floors have reliable physical volume. The editor
+            // disables shadow rendering entirely while Map Maker is active.
             const floorSlabThickness = 0.18;
             const floorGeometry = new THREE.BoxGeometry(
                 integratedEditorBlockSize,
@@ -5131,11 +5222,16 @@
             const wallVariantCounts = [0, 0, 0, 0];
             let halfWallCount = 0;
             const halfWallVariantCounts = [0, 0, 0, 0];
+            let quarterWallCount = 0;
+            const quarterWallVariantCounts = [0, 0, 0, 0];
             let ceilingCount = 0;
             let ventCount = 0;
             let voidCount = 0;
             let lightCount = 0;
             const halfWallPostRegistry = new Map();
+            // Uses the same quarter-unit grid keys as half-wall posts so the two
+            // wall types can find each other for clean endpoints and shared trim.
+            const quarterWallRegistry = new Map();
 
             Object.entries(integratedEditorMapData).forEach(([key, rawCell]) => {
                 const parsedCountKey = integratedEditorParseCellKey(key);
@@ -5161,6 +5257,13 @@
                         : getWallVariantFromGrid(countGx, countGz);
                     wallVariantCounts[variant] += 1;
                     return;
+                }
+
+                for (const quarterWall of (Array.isArray(cell.quarterWalls) ? cell.quarterWalls : [])) {
+                    const levels = integratedEditorGetQuarterWallLevels(quarterWall);
+                    const variant = integratedEditorResolveHalfWallVariant(quarterWall, getWallVariantFromGrid(countGx, countGz, 23));
+                    quarterWallCount += levels.length;
+                    quarterWallVariantCounts[variant] += levels.length;
                 }
 
                 if (cell.f !== undefined) floorCount += 1;
@@ -5224,7 +5327,7 @@
                 integratedEditorWallMesh = integratedEditorWallMeshes[0] || null;
 
                 integratedEditorWallBaseboardMesh = new THREE.InstancedMesh(
-                    new THREE.BoxGeometry(integratedEditorBlockSize + 0.08, 0.15, integratedEditorBlockSize + 0.08),
+                    new THREE.BoxGeometry(integratedEditorBlockSize - 0.02, 0.15, integratedEditorBlockSize - 0.02),
                     integratedEditorMatBaseboard,
                     wallCount
                 );
@@ -5236,6 +5339,52 @@
                 integratedEditorWallBaseboardMesh.userData.editorSharedGeometry = false;
             }
 
+            if (quarterWallCount > 0) {
+                const quarterWallGeometry = new THREE.BoxGeometry(1.0, 1.0, 1.0);
+                integratedEditorQuarterWallMeshes = [];
+                for (let variant = 0; variant < 4; variant += 1) {
+                    if (!quarterWallVariantCounts[variant]) continue;
+                    const mesh = new THREE.InstancedMesh(
+                        quarterWallGeometry,
+                        integratedEditorMatQuarterWallVariants[variant] || integratedEditorMatWallVariants[variant],
+                        quarterWallVariantCounts[variant]
+                    );
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    mesh.frustumCulled = false;
+                    mesh.userData.editorKind = 'quarterWall';
+                    mesh.userData.editorSharedMaterial = true;
+                    mesh.userData.editorSharedGeometry = true;
+                    mesh.userData.editorPickData = [];
+                    mesh.userData.editorVariant = variant;
+                    integratedEditorQuarterWallMeshes.push(mesh);
+                }
+
+                // Quarter walls have their own edge baseboards. Separate side strips
+                // stop adjacent quarter blocks from double-drawing trim through each
+                // other, while still leaving an exposed trim face for half-wall joins.
+                const quarterBaseboardCapacity = Math.max(1, quarterWallCount * 2);
+                integratedEditorQuarterWallBaseboardXMesh = new THREE.InstancedMesh(
+                    new THREE.BoxGeometry(1.0, 0.15, 0.05),
+                    integratedEditorMatBaseboard,
+                    quarterBaseboardCapacity
+                );
+                integratedEditorQuarterWallBaseboardZMesh = new THREE.InstancedMesh(
+                    new THREE.BoxGeometry(0.05, 0.15, 1.0),
+                    integratedEditorMatBaseboard,
+                    quarterBaseboardCapacity
+                );
+                for (const trimMesh of [integratedEditorQuarterWallBaseboardXMesh, integratedEditorQuarterWallBaseboardZMesh]) {
+                    trimMesh.castShadow = true;
+                    trimMesh.receiveShadow = true;
+                    trimMesh.renderOrder = 1;
+                    trimMesh.userData.editorKind = 'quarterWallBaseboard';
+                    trimMesh.userData.editorSkipPick = true;
+                    trimMesh.userData.editorSharedMaterial = true;
+                    trimMesh.userData.editorSharedGeometry = false;
+                }
+            }
+
             if (halfWallCount > 0) {
                 // Half-walls are fence posts: one post per 1x1 slot. Connections
                 // are generated separately between neighboring posts, like a
@@ -5244,8 +5393,8 @@
                 // Connector spans are exactly the gap between neighboring 0.32u posts
                 // one world unit apart. This prevents coplanar/overlapping faces
                 // at the post/connector junction (no z-fighting).
-                const halfWallRailXGeometry = new THREE.BoxGeometry(0.68, 1.0, 0.32);
-                const halfWallRailZGeometry = new THREE.BoxGeometry(0.32, 1.0, 0.68);
+                const halfWallRailXGeometry = new THREE.BoxGeometry(0.66, 1.0, 0.32);
+                const halfWallRailZGeometry = new THREE.BoxGeometry(0.32, 1.0, 0.66);
                 // When four half-wall posts form a 2x2 cluster, fill the center
                 // so it reads as one solid square rather than a hollow outline.
                 const halfWallFillGeometry = new THREE.BoxGeometry(0.68, 1.0, 0.68);
@@ -5253,8 +5402,8 @@
                 const halfWallTopCapRailZGeometry = new THREE.BoxGeometry(0.38, 0.08, 0.31);
                 // Baseboard connectors exactly bridge the gap between 0.38u posts
                 // without overlapping their edges, preventing z-fighting.
-                const halfWallBaseboardRailXGeometry = new THREE.BoxGeometry(0.62, 0.15, 0.38);
-                const halfWallBaseboardRailZGeometry = new THREE.BoxGeometry(0.38, 0.15, 0.62);
+                const halfWallBaseboardRailXGeometry = new THREE.BoxGeometry(0.60, 0.15, 0.38);
+                const halfWallBaseboardRailZGeometry = new THREE.BoxGeometry(0.38, 0.15, 0.60);
                 integratedEditorHalfWallMeshes = [];
                 for (let variant = 0; variant < 4; variant += 1) {
                     if (!halfWallVariantCounts[variant]) continue;
@@ -5339,8 +5488,8 @@
                 integratedEditorHalfWallTopCapMesh.userData.editorSharedMaterial = true;
                 integratedEditorHalfWallTopCapMesh.userData.editorSharedGeometry = false;
 
-                const halfWallRailCapacity = Math.max(2, halfWallCount * 6 + 8);
-                const halfWallTopCapRailCapacity = Math.max(2, halfWallCount * 12 + 16);
+                const halfWallRailCapacity = Math.max(2, halfWallCount * 10 + quarterWallCount * 2 + 16);
+                const halfWallTopCapRailCapacity = Math.max(2, halfWallCount * 20 + quarterWallCount * 4 + 32);
                 integratedEditorHalfWallRailMeshes = [
                     new THREE.InstancedMesh(halfWallRailXGeometry, integratedEditorMatHalfWallRailXVariants[0] || integratedEditorMatWallVariants[0], halfWallRailCapacity),
                     new THREE.InstancedMesh(halfWallRailZGeometry, integratedEditorMatHalfWallRailZVariants[0] || integratedEditorMatWallVariants[0], halfWallRailCapacity)
@@ -5501,6 +5650,7 @@
             const wallVariantIndices = [0, 0, 0, 0];
             let wallIndex = 0;
             const halfWallVariantIndices = [0, 0, 0, 0];
+            const quarterWallVariantIndices = [0, 0, 0, 0];
             let halfWallIndex = 0;
             let wallBaseboardIndex = 0;
             let halfWallBaseboardIndex = 0;
@@ -5565,7 +5715,38 @@
                     }
                     // Do not return here: a cell can contain a half-wall AND its
                     // normal floor, ceiling, lights, and pit/terrain geometry.
+                }
 
+                if (Array.isArray(cell.quarterWalls) && cell.quarterWalls.length) {
+                    for (const quarterWall of cell.quarterWalls) {
+                        const levels = integratedEditorGetQuarterWallLevels(quarterWall);
+                        const fallbackVariant = getWallVariantFromGrid(gx, gz, 23);
+                        const variant = integratedEditorResolveHalfWallVariant(quarterWall, fallbackVariant);
+                        const mesh = integratedEditorQuarterWallMeshes.find(item => item.userData.editorVariant === variant);
+                        if (!mesh) continue;
+                        const quarterX = worldX + Number(quarterWall.x || 0);
+                        const quarterZ = worldZ + Number(quarterWall.z || 0);
+                        const floorY = Number(cell.f || 0);
+                        const levelSet = new Set(levels);
+                        const quarterKey = `${layer}:${Math.round(quarterX * 2)},${Math.round(quarterZ * 2)}`;
+                        quarterWallRegistry.set(quarterKey, {
+                            x: quarterX, z: quarterZ, floorY, ceilY: Number(cell.c),
+                            layer, levels, levelSet, variant, gx, gz,
+                            localX: Number(quarterWall.x || 0), localZ: Number(quarterWall.z || 0)
+                        });
+                        for (const level of levels) {
+                            integratedEditorScratchObject.position.set(quarterX, floorY + level + 0.5, quarterZ);
+                            integratedEditorScratchObject.rotation.set(0, 0, 0);
+                            integratedEditorScratchObject.scale.set(1, 1, 1);
+                            integratedEditorScratchObject.updateMatrix();
+                            const index = quarterWallVariantIndices[mesh.userData.editorVariant]++;
+                            mesh.setMatrixAt(index, integratedEditorScratchObject.matrix);
+                            mesh.userData.editorPickData[index] = {
+                                gx, gz, layer, localX: Number(quarterWall.x || 0),
+                                localZ: Number(quarterWall.z || 0), floorY, level
+                            };
+                        }
+                    }
                 }
 
                 if (cell.w) {
@@ -5717,6 +5898,65 @@
                 }
             });
 
+            // Add quarter-wall baseboards only on exposed sides. If another quarter
+            // block at the same floor occupies that side, its surface hides this seam;
+            // omitting the internal trim prevents trim-on-trim intersections. Sides
+            // next to half-walls remain so the half-wall baseboard can meet them.
+            let quarterBaseboardXIndex = 0;
+            let quarterBaseboardZIndex = 0;
+            const quarterNeighborKey = (q, dx, dz) =>
+                `${q.layer}:${Math.round((q.x + dx) * 2)},${Math.round((q.z + dz) * 2)}`;
+            const isSameHeightQuarterNeighbor = (q, dx, dz) => {
+                const n = quarterWallRegistry.get(quarterNeighborKey(q, dx, dz));
+                return Boolean(n && n.levelSet.has(0) && Math.abs(Number(n.floorY) - Number(q.floorY)) < 0.001);
+            };
+            for (const q of quarterWallRegistry.values()) {
+                if (!q.levelSet.has(0)) continue;
+                const localX = Number(q.localX);
+                const localZ = Number(q.localZ);
+                const fullWallBeyondX = Math.abs(localX - 1.5) < 0.001
+                    ? Boolean(integratedEditorGetCell(q.gx + 1, q.gz, q.layer)?.w)
+                    : Math.abs(localX + 1.5) < 0.001
+                        ? Boolean(integratedEditorGetCell(q.gx - 1, q.gz, q.layer)?.w) : false;
+                const fullWallBeyondZ = Math.abs(localZ - 1.5) < 0.001
+                    ? Boolean(integratedEditorGetCell(q.gx, q.gz + 1, q.layer)?.w)
+                    : Math.abs(localZ + 1.5) < 0.001
+                        ? Boolean(integratedEditorGetCell(q.gx, q.gz - 1, q.layer)?.w) : false;
+                const y = Number(q.floorY) + 0.075;
+                const trimOffset = 0.515; // outer edge protrudes 0.04u beyond the block
+                const transformTrim = (mesh, index, x, z) => {
+                    if (!mesh || index >= mesh.instanceMatrix.count) return index;
+                    integratedEditorScratchObject.position.set(x, y, z);
+                    integratedEditorScratchObject.rotation.set(0, 0, 0);
+                    integratedEditorScratchObject.scale.set(1, 1, 1);
+                    integratedEditorScratchObject.updateMatrix();
+                    mesh.setMatrixAt(index, integratedEditorScratchObject.matrix);
+                    return index + 1;
+                };
+                if (!isSameHeightQuarterNeighbor(q, 0, 1) && !(Math.abs(localZ - 1.5) < 0.001 && fullWallBeyondZ)) {
+                    quarterBaseboardXIndex = transformTrim(integratedEditorQuarterWallBaseboardXMesh, quarterBaseboardXIndex, q.x, q.z + trimOffset);
+                }
+                if (!isSameHeightQuarterNeighbor(q, 0, -1) && !(Math.abs(localZ + 1.5) < 0.001 && fullWallBeyondZ)) {
+                    quarterBaseboardXIndex = transformTrim(integratedEditorQuarterWallBaseboardXMesh, quarterBaseboardXIndex, q.x, q.z - trimOffset);
+                }
+                if (!isSameHeightQuarterNeighbor(q, 1, 0) && !(Math.abs(localX - 1.5) < 0.001 && fullWallBeyondX)) {
+                    quarterBaseboardZIndex = transformTrim(integratedEditorQuarterWallBaseboardZMesh, quarterBaseboardZIndex, q.x + trimOffset, q.z);
+                }
+                if (!isSameHeightQuarterNeighbor(q, -1, 0) && !(Math.abs(localX + 1.5) < 0.001 && fullWallBeyondX)) {
+                    quarterBaseboardZIndex = transformTrim(integratedEditorQuarterWallBaseboardZMesh, quarterBaseboardZIndex, q.x - trimOffset, q.z);
+                }
+            }
+            if (integratedEditorQuarterWallBaseboardXMesh) {
+                integratedEditorQuarterWallBaseboardXMesh.count = quarterBaseboardXIndex;
+                integratedEditorQuarterWallBaseboardXMesh.instanceMatrix.needsUpdate = true;
+                if (quarterBaseboardXIndex > 0) integratedEditorGroup.add(integratedEditorQuarterWallBaseboardXMesh);
+            }
+            if (integratedEditorQuarterWallBaseboardZMesh) {
+                integratedEditorQuarterWallBaseboardZMesh.count = quarterBaseboardZIndex;
+                integratedEditorQuarterWallBaseboardZMesh.instanceMatrix.needsUpdate = true;
+                if (quarterBaseboardZIndex > 0) integratedEditorGroup.add(integratedEditorQuarterWallBaseboardZMesh);
+            }
+
             if (integratedEditorFloorMesh) {
                 integratedEditorFloorMesh.instanceMatrix.needsUpdate = true;
                 integratedEditorGroup.add(integratedEditorFloorMesh);
@@ -5724,6 +5964,15 @@
 
             integratedEditorWallMeshes.forEach(mesh => {
                 mesh.instanceMatrix.needsUpdate = true;
+                integratedEditorGroup.add(mesh);
+            });
+            integratedEditorQuarterWallMeshes.forEach(mesh => {
+                mesh.instanceMatrix.needsUpdate = true;
+                mesh.count = quarterWallVariantIndices[mesh.userData.editorVariant];
+                mesh.instanceMatrix.needsUpdate = true;
+                mesh.computeBoundingBox();
+                mesh.computeBoundingSphere();
+                mesh.userData.editorPickData.length = mesh.count;
                 integratedEditorGroup.add(mesh);
             });
             if (integratedEditorWallBaseboardMesh) {
@@ -5849,13 +6098,13 @@
                             const railCapVisible = !(post.levelSet.has(L + 1) && other.levelSet.has(L + 1))
                                 && !integratedEditorCapBlockedByCeiling(floorY + L + 1, Math.min(Number(post.ceilY), Number(other.ceilY)));
                             if (neighbor.axis === 'x') {
-                                if (setInstance(railXMesh, railXIndex, midX, floorY + L + 0.5, midZ, 1 / 0.68, 1, 1)) railXIndex++;
-                                if (L === 0 && setInstance(baseXMesh, baseXIndex, midX, floorY + 0.075, midZ, 1 / 0.62, 1, 1)) baseXIndex++;
+                                if (setInstance(railXMesh, railXIndex, midX, floorY + L + 0.5, midZ, 1, 1, 1)) railXIndex++;
+                                if (L === 0 && setInstance(baseXMesh, baseXIndex, midX, floorY + 0.075, midZ, 1, 1, 1)) baseXIndex++;
                                 if (railCapVisible && setInstance(capXMesh, capXIndex, Number(post.x) + CAP_OFFSET, capY, Number(post.z), 1, 1, 1)) capXIndex++;
                                 if (railCapVisible && setInstance(capXMesh, capXIndex, Number(other.x) - CAP_OFFSET, capY, Number(other.z), 1, 1, 1)) capXIndex++;
                             } else {
-                                if (setInstance(railZMesh, railZIndex, midX, floorY + L + 0.5, midZ, 1, 1, 1 / 0.68)) railZIndex++;
-                                if (L === 0 && setInstance(baseZMesh, baseZIndex, midX, floorY + 0.075, midZ, 1, 1, 1 / 0.62)) baseZIndex++;
+                                if (setInstance(railZMesh, railZIndex, midX, floorY + L + 0.5, midZ, 1, 1, 1)) railZIndex++;
+                                if (L === 0 && setInstance(baseZMesh, baseZIndex, midX, floorY + 0.075, midZ, 1, 1, 1)) baseZIndex++;
                                 if (railCapVisible && setInstance(capZMesh, capZIndex, Number(post.x), capY, Number(post.z) + CAP_OFFSET, 1, 1, 1)) capZIndex++;
                                 if (railCapVisible && setInstance(capZMesh, capZIndex, Number(other.x), capY, Number(other.z) - CAP_OFFSET, 1, 1, 1)) capZIndex++;
                             }
@@ -5911,22 +6160,29 @@
                 // wall (or a carpet pit face) bridges the remaining gap, at every level.
                 const addHalfWallBoundaryConnector = (post, axis, boundaryX, boundaryZ) => {
                     const floorY = Number(post.floorY) || 0;
-                    const distance = axis === 'x'
-                        ? Math.abs(Number(boundaryX) - Number(post.x))
-                        : Math.abs(Number(boundaryZ) - Number(post.z));
-                    const bridgeLength = Math.max(0.08, distance + 0.04);
-                    const midX = axis === 'x' ? (Number(post.x) + Number(boundaryX)) * 0.5 : Number(post.x);
-                    const midZ = axis === 'z' ? (Number(post.z) + Number(boundaryZ)) * 0.5 : Number(post.z);
+                    const boundary = axis === 'x' ? Number(boundaryX) : Number(boundaryZ);
+                    const postCoordinate = axis === 'x' ? Number(post.x) : Number(post.z);
+                    const direction = boundary >= postCoordinate ? 1 : -1;
+                    const postHalfExtent = 0.16;
+                    const clearance = 0.015;
+                    const start = postCoordinate + direction * (postHalfExtent + clearance);
+                    // The main-wall baseboard is inset 0.01u from the tile edge;
+                    // leave a small clearance rather than embedding connector faces.
+                    const end = boundary - direction * (0.01 + clearance);
+                    const bridgeLength = Math.max(0.08, Math.abs(end - start));
+                    const bridgeMid = (start + end) * 0.5;
+                    const midX = axis === 'x' ? bridgeMid : Number(post.x);
+                    const midZ = axis === 'z' ? bridgeMid : Number(post.z);
                     for (const L of post.levels) {
                         const capY = floorY + L + 1.042; // tiny lift vs. the post cap to avoid z-fighting
                         const capVisible = !post.levelSet.has(L + 1) && !integratedEditorCapBlockedByCeiling(floorY + L + 1, post.ceilY);
                         if (axis === 'x') {
-                            if (setInstance(railXMesh, railXIndex, midX, floorY + L + 0.5, midZ, bridgeLength / 0.68, 1, 1)) railXIndex++;
-                            if (L === 0 && setInstance(baseXMesh, baseXIndex, midX, floorY + 0.075, midZ, bridgeLength / 0.62, 1, 1)) baseXIndex++;
+                            if (setInstance(railXMesh, railXIndex, midX, floorY + L + 0.5, midZ, bridgeLength / 0.66, 1, 1)) railXIndex++;
+                            if (L === 0 && setInstance(baseXMesh, baseXIndex, midX, floorY + 0.075, midZ, bridgeLength / 0.60, 1, 1)) baseXIndex++;
                             if (capVisible && setInstance(capXMesh, capXIndex, midX, capY, midZ, bridgeLength / 0.31, 1, 1)) capXIndex++;
                         } else {
-                            if (setInstance(railZMesh, railZIndex, midX, floorY + L + 0.5, midZ, 1, 1, bridgeLength / 0.68)) railZIndex++;
-                            if (L === 0 && setInstance(baseZMesh, baseZIndex, midX, floorY + 0.075, midZ, 1, 1, bridgeLength / 0.62)) baseZIndex++;
+                            if (setInstance(railZMesh, railZIndex, midX, floorY + L + 0.5, midZ, 1, 1, bridgeLength / 0.66)) railZIndex++;
+                            if (L === 0 && setInstance(baseZMesh, baseZIndex, midX, floorY + 0.075, midZ, 1, 1, bridgeLength / 0.60)) baseZIndex++;
                             if (capVisible && setInstance(capZMesh, capZIndex, midX, capY, midZ, 1, 1, bridgeLength / 0.31)) capZIndex++;
                         }
                     }
@@ -5969,6 +6225,44 @@
                     }
                 }
 
+                // Quarter-walls are solid wall barriers, not members of the half-wall
+                // post network. Bridge a half-wall rail only up to the quarter block's
+                // face, respecting aligned occupied levels; don't attach half-wall
+                // connectors to the quarter wall's own top-cap/baseboard system.
+                for (const post of halfWallPostRegistry.values()) {
+                    const px2 = halfGridCoord(post.x);
+                    const pz2 = halfGridCoord(post.z);
+                    const neighbors = [
+                        { axis: 'x', x2: px2 + 2, z2: pz2 },
+                        { axis: 'x', x2: px2 - 2, z2: pz2 },
+                        { axis: 'z', x2: px2, z2: pz2 + 2 },
+                        { axis: 'z', x2: px2, z2: pz2 - 2 }
+                    ];
+                    for (const neighbor of neighbors) {
+                        const quarter = quarterWallRegistry.get(postKey(post.layer, neighbor.x2, neighbor.z2));
+                        if (!quarter) continue;
+                        const connectedLevels = post.levels.filter(postLevel =>
+                            quarter.levels.some(quarterLevel =>
+                                Math.abs((Number(post.floorY) + Number(postLevel)) - (Number(quarter.floorY) + Number(quarterLevel))) < 0.001
+                            )
+                        );
+                        if (!connectedLevels.length) continue;
+
+                        const direction = neighbor.axis === 'x'
+                            ? Math.sign(Number(quarter.x) - Number(post.x))
+                            : Math.sign(Number(quarter.z) - Number(post.z));
+                        if (!direction) continue;
+                        const barrierPost = { ...post, levels: connectedLevels, levelSet: new Set(connectedLevels) };
+                        const boundaryX = neighbor.axis === 'x'
+                            ? Number(quarter.x) - direction * 0.5
+                            : Number(post.x);
+                        const boundaryZ = neighbor.axis === 'z'
+                            ? Number(quarter.z) - direction * 0.5
+                            : Number(post.z);
+                        addHalfWallBoundaryConnector(barrierPost, neighbor.axis, boundaryX, boundaryZ);
+                    }
+                }
+
                 const finishRail = (mesh, count) => {
                     if (!mesh) return;
                     mesh.count = count;
@@ -5997,31 +6291,14 @@
                 });
             }
 
-            // Walls and half-walls use separate visual and shadow draw objects.
-            // The original editor meshes are retained as the authoritative instance
-            // data/pick sources, while explicit camera-visible replicas guarantee the
-            // walls are rendered normally. Matching colorless replicas populate shadows.
-            integratedEditorWallShadowMeshes = [];
-            integratedEditorWallVisualMeshes = [];
-            if (!integratedEditorWallShadowMaterial) {
-                integratedEditorWallShadowMaterial = new THREE.MeshBasicMaterial({
-                    color: 0xffffff,
-                    colorWrite: false,
-                    depthWrite: false,
-                    side: THREE.DoubleSide
-                });
-                integratedEditorWallShadowDepthMaterial = new THREE.MeshDepthMaterial({
-                    depthPacking: THREE.RGBADepthPacking,
-                    side: THREE.DoubleSide
-                });
-                integratedEditorWallShadowDistanceMaterial = new THREE.MeshDistanceMaterial({
-                    side: THREE.DoubleSide
-                });
-            }
-
-            const shadowSources = [
+            // Keep the normal editor meshes as the only draw path. The map maker
+            // disables the renderer shadow pass entirely and creates no shadow helpers.
+            for (const mesh of [
                 ...integratedEditorWallMeshes,
                 integratedEditorWallBaseboardMesh,
+                ...integratedEditorQuarterWallMeshes,
+                integratedEditorQuarterWallBaseboardXMesh,
+                integratedEditorQuarterWallBaseboardZMesh,
                 ...integratedEditorHalfWallMeshes,
                 integratedEditorHalfWallBaseboardMesh,
                 integratedEditorHalfWallTopCapMesh,
@@ -6031,87 +6308,12 @@
                 ...integratedEditorHalfWallRailMeshes,
                 ...integratedEditorHalfWallTopCapRailMeshes,
                 ...integratedEditorHalfWallBaseboardRailMeshes
-            ];
-
-            for (const sourceMesh of shadowSources) {
-                if (!sourceMesh || !sourceMesh.isInstancedMesh || sourceMesh.count <= 0) continue;
-
-                const shadowMesh = new THREE.InstancedMesh(
-                    sourceMesh.geometry,
-                    integratedEditorWallShadowMaterial,
-                    sourceMesh.instanceMatrix.count
-                );
-                shadowMesh.count = sourceMesh.count;
-                shadowMesh.instanceMatrix.copy(sourceMesh.instanceMatrix);
-                shadowMesh.instanceMatrix.needsUpdate = true;
-                shadowMesh.castShadow = true;
-                shadowMesh.receiveShadow = false;
-                // Shadow replicas must stay available to the light frusta even when
-                // their camera-rendered counterpart is outside the view frustum.
-                shadowMesh.frustumCulled = false;
-                shadowMesh.customDepthMaterial = integratedEditorWallShadowDepthMaterial;
-                shadowMesh.customDistanceMaterial = integratedEditorWallShadowDistanceMaterial;
-                shadowMesh.userData.editorKind = 'wallShadow';
-                shadowMesh.userData.editorSkipPick = true;
-                shadowMesh.userData.editorSharedMaterial = true;
-                shadowMesh.userData.editorSharedGeometry = true;
-                shadowMesh.userData.editorSharedShadowMaterials = true;
-                shadowMesh.userData.editorShadowReplica = true;
-
-                integratedEditorGroup.add(shadowMesh);
-                integratedEditorWallShadowMeshes.push(shadowMesh);
-
-                // Create an explicit camera-rendered twin. This keeps the visual draw
-                // path completely independent from the shadow draw path. Preserve the
-                // same instance matrices and editor pick metadata, but force ordinary
-                // color/depth writes so the wall can never disappear from the camera.
-                const visualMaterial = Array.isArray(sourceMesh.material)
-                    ? sourceMesh.material.map(material => material.clone())
-                    : sourceMesh.material.clone();
-                const visualMaterials = Array.isArray(visualMaterial) ? visualMaterial : [visualMaterial];
-                visualMaterials.forEach(material => {
-                    material.colorWrite = true;
-                    material.depthWrite = true;
-                    material.depthTest = true;
-                    material.transparent = false;
-                    material.opacity = 1;
-                });
-
-                const visualMesh = new THREE.InstancedMesh(
-                    sourceMesh.geometry,
-                    Array.isArray(visualMaterial) ? visualMaterial : visualMaterial,
-                    sourceMesh.instanceMatrix.count
-                );
-                visualMesh.count = sourceMesh.count;
-                visualMesh.instanceMatrix.copy(sourceMesh.instanceMatrix);
-                visualMesh.instanceMatrix.needsUpdate = true;
-                visualMesh.castShadow = false;
-                visualMesh.receiveShadow = true;
-                // This replica is the authoritative camera-rendered wall/half-wall
-                // path. The source mesh remains available for instance/pick/shadow
-                // data, but must not hide or replace the visible replica.
-                visualMesh.visible = true;
-                visualMesh.frustumCulled = false;
-                visualMesh.userData = { ...sourceMesh.userData };
-                visualMesh.userData.editorVisualReplica = true;
-                visualMesh.userData.editorSkipPick = Boolean(sourceMesh.userData.editorSkipPick);
-
-                integratedEditorGroup.add(visualMesh);
-                integratedEditorWallVisualMeshes.push(visualMesh);
-
-                // The cloned replica above is the actual camera-visible draw.
-                // Keep the source mesh hidden while retaining its instance/pick/shadow data.
-                sourceMesh.visible = false;
-                sourceMesh.castShadow = false;
-                sourceMesh.receiveShadow = true;
+            ]) {
+                if (!mesh) continue;
+                mesh.visible = true;
             }
 
             integratedEditorRefreshStaticInstancedMeshBounds();
-
-            if (renderer && renderer.shadowMap) {
-                renderer.shadowMap.needsUpdate = true;
-            }
-
             integratedEditorShadowChunkKey = null;
             integratedEditorBuildPointLights(true);
             integratedEditorRebuildEditorCursorGeometry();
@@ -6130,6 +6332,9 @@
                 integratedEditorFloorMesh,
                 ...integratedEditorWallMeshes,
                 integratedEditorWallBaseboardMesh,
+                ...integratedEditorQuarterWallMeshes,
+                integratedEditorQuarterWallBaseboardXMesh,
+                integratedEditorQuarterWallBaseboardZMesh,
                 ...integratedEditorHalfWallMeshes,
                 integratedEditorHalfWallBaseboardMesh,
                 integratedEditorHalfWallTopCapMesh,
@@ -6165,8 +6370,10 @@
             integratedEditorWallMesh = null;
             integratedEditorWallMeshes = [];
             integratedEditorWallBaseboardMesh = null;
-            integratedEditorWallShadowMeshes = [];
-            integratedEditorWallVisualMeshes = [];
+            integratedEditorQuarterWallMeshes = [];
+            integratedEditorQuarterWallPickData = [];
+            integratedEditorQuarterWallBaseboardXMesh = null;
+            integratedEditorQuarterWallBaseboardZMesh = null;
             integratedEditorHalfWallMesh = null;
             integratedEditorHalfWallMeshes = [];
             integratedEditorHalfWallBaseboardMesh = null;
@@ -6533,14 +6740,16 @@
                 .slice(0, integratedEditorMaxShadowPointLights);
 
             const shadowKeys = new Set(shadowCandidates.map(candidate => candidate.sourceKey));
-            const activeCandidates = [
-                ...shadowCandidates,
-                ...nearestCandidates.filter(candidate => !shadowKeys.has(candidate.sourceKey))
-            ].slice(0, integratedEditorMaxActivePointLights);
+            const activeCandidates = integratedEditorMode
+                ? nearestCandidates
+                : [
+                    ...shadowCandidates,
+                    ...nearestCandidates.filter(candidate => !shadowKeys.has(candidate.sourceKey))
+                ].slice(0, integratedEditorMaxActivePointLights);
 
             while (integratedEditorPointLightPool.length < activeCandidates.length) {
                 const pointLight = new THREE.PointLight(0xffffff, 0, 12.0, 2.0);
-                pointLight.castShadow = integratedEditorPointLightPool.length < integratedEditorMaxShadowPointLights;
+                pointLight.castShadow = !integratedEditorMode && integratedEditorPointLightPool.length < integratedEditorMaxShadowPointLights;
                 pointLight.visible = false;
                 pointLight.shadow.mapSize.width = 256;
                 pointLight.shadow.mapSize.height = 256;
@@ -6568,7 +6777,7 @@
                 }
 
                 const dimness = Math.max(0, Math.min(2, Number(candidate.light.d) || 0));
-                const isShadowSlot = i < integratedEditorMaxShadowPointLights;
+                const isShadowSlot = !integratedEditorMode && i < integratedEditorMaxShadowPointLights;
                 const previousShadowSourceKey = pointLight.userData.editorShadowSourceKey;
                 const shadowSourceChanged = isShadowSlot && previousShadowSourceKey !== candidate.sourceKey;
 
@@ -6708,7 +6917,7 @@
         }
 
         function integratedEditorGetToolDisplayName() {
-            if (integratedEditorActiveTool === 3) return `[3] Walls [${integratedEditorGetWallpaperName()}]`;
+            if (integratedEditorActiveTool === 3) return `[3] Walls / ${integratedEditorGetWallModeName()} [${integratedEditorGetWallpaperName()}]`;
             if (integratedEditorActiveTool === 4) return `[4] Lights [${integratedEditorLightColorNames[integratedEditorLightColorIndex]}] [${integratedEditorLightDimness}x]`;
             return `[${integratedEditorActiveTool}] ${integratedEditorGetToolName()}`;
         }
@@ -6768,6 +6977,7 @@
             const height = Math.max(0.25, Math.min(16, ceilingY - floorY));
             const isLightPlacement = integratedEditorActiveTool === 4;
             const isHalfWallPlacement = integratedEditorActiveTool === 3 && integratedEditorHalfWallMode;
+            const isQuarterWallPlacement = integratedEditorActiveTool === 3 && integratedEditorQuarterWallMode;
 
             if (!integratedEditorCursor.userData.baseGeometryReady) {
                 integratedEditorCursor.geometry.dispose();
@@ -6775,7 +6985,7 @@
                 integratedEditorCursor.userData.baseGeometryReady = true;
             }
 
-            if (isLightPlacement || isHalfWallPlacement) {
+            if (isLightPlacement || isHalfWallPlacement || isQuarterWallPlacement) {
                 // Half-walls remain floor-mounted, but Tool 4 is a ceiling tool.
                 // Keep the same 1x1 quarter-tile footprint while moving the light
                 // cursor itself to the active cell ceiling so the visual target,
@@ -6794,9 +7004,10 @@
                     : (integratedEditorCurrentLayer * integratedEditorLayerStep + integratedEditorDefaultCeiling);
                 const placementY = isLightPlacement
                     ? placementCeilingY + 0.018
-                    : placementFloorY + 0.018;
+                    : isQuarterWallPlacement ? placementFloorY + 0.5 : placementFloorY + 0.018;
 
-                integratedEditorCursor.scale.set(0.96, 0.025, 0.96);
+                if (isQuarterWallPlacement) integratedEditorCursor.scale.set(0.98, 0.98, 0.98);
+                else integratedEditorCursor.scale.set(0.96, 0.025, 0.96);
                 integratedEditorCursor.position.set(
                     gx * integratedEditorBlockSize + slotX,
                     placementY,
@@ -6981,6 +7192,15 @@
                 const target = pickData[instanceId];
                 if (target) {
                     return { gx: target.gx, gz: target.gz, type: 'halfWall', localX: target.localX, localZ: target.localZ, floorY: target.floorY, orientation: target.orientation };
+                }
+            }
+
+            if (kind === 'quarterWall' && instanceId !== undefined) {
+                const target = object.userData && object.userData.editorPickData
+                    ? object.userData.editorPickData[instanceId]
+                    : integratedEditorQuarterWallPickData[instanceId];
+                if (target) {
+                    return { gx: target.gx, gz: target.gz, layer: target.layer, type: 'quarterWall', localX: target.localX, localZ: target.localZ, floorY: target.floorY, level: target.level };
                 }
             }
 
@@ -7198,6 +7418,7 @@
                     cell.w = false;
                     cell.h = false;
                     cell.halfWalls = [];
+                    cell.quarterWalls = [];
                     cell.stairs = null;
                     cell.wallOpenEdges = [];
                     cell.pitOpenEdges = [];
@@ -7246,7 +7467,7 @@
                     return false;
                 }
 
-                const precisionStep = integratedEditorIsShiftHeld() ? 0.25 : 1.0;
+                const precisionStep = integratedEditorIsShiftHeld() ? 3.0 : 1.0;
 
                 // Tool 2 is independently addressable by clicking the floor or ceiling.
                 // Floor target: left lowers, right raises. Ceiling target: left raises, right lowers.
@@ -7314,6 +7535,7 @@
                     cell.w = false;
                     cell.h = false;
                     cell.halfWalls = [];
+                    cell.quarterWalls = [];
                     cell.stairs = { direction };
                     cell.wallOpenEdges = [];
                     cell.lights = [];
@@ -7323,6 +7545,65 @@
                     integratedEditorConnectStairToNeighbor(gx, gz, integratedEditorCurrentLayer, direction);
                     integratedEditorShowToast(`STAIRS PLACED ${key} / OPEN ${direction.toUpperCase()} / 4U RISE`);
                     return true;
+                }
+
+                if (integratedEditorQuarterWallMode) {
+                    if (!cell) {
+                        if (action === 'right') {
+                            integratedEditorShowToast('NO QUARTER-WALL HERE');
+                            return false;
+                        }
+                        cell = integratedEditorCreateDefaultCell(integratedEditorCurrentLayer);
+                        integratedEditorMapData[key] = cell;
+                    }
+                    if (cell.w) {
+                        integratedEditorShowToast('REMOVE MAIN WALL FIRST');
+                        return false;
+                    }
+                    if (!Array.isArray(cell.quarterWalls)) cell.quarterWalls = [];
+                    if (!Array.isArray(cell.halfWalls)) cell.halfWalls = [];
+                    const validSlots = [-1.5, -0.5, 0.5, 1.5];
+                    const nearestSlot = value => validSlots.reduce((best, candidate) =>
+                        Math.abs(candidate - value) < Math.abs(best - value) ? candidate : best, validSlots[0]);
+                    const slotX = nearestSlot(Number.isFinite(Number(localX)) ? Number(localX) : 0);
+                    const slotZ = nearestSlot(Number.isFinite(Number(localZ)) ? Number(localZ) : 0);
+                    const slotKey = `${slotX.toFixed(3)},${slotZ.toFixed(3)}`;
+                    const existingIndex = cell.quarterWalls.findIndex(qw => `${Number(qw.x || 0).toFixed(3)},${Number(qw.z || 0).toFixed(3)}` === slotKey);
+                    const halfWallAtSlot = cell.halfWalls.find(hw => `${Number(hw.x || 0).toFixed(3)},${Number(hw.z || 0).toFixed(3)}` === slotKey);
+                    if (action === 'left') {
+                        if (halfWallAtSlot) {
+                            integratedEditorShowToast('REMOVE HALF-WALL AT THIS SLOT FIRST');
+                            return false;
+                        }
+                        if (existingIndex >= 0) {
+                            const entry = cell.quarterWalls[existingIndex];
+                            const levels = integratedEditorGetQuarterWallLevels(entry);
+                            const nextLevel = levels[levels.length - 1] + 1;
+                            if (Number(cell.f || 0) + nextLevel + 1 > Number(cell.c) + 0.001) {
+                                integratedEditorShowToast('CEILING REACHED / CANNOT STACK HIGHER');
+                                return false;
+                            }
+                            levels.push(nextLevel);
+                            entry.lv = levels;
+                            integratedEditorShowToast(`QUARTER-WALL STACKED / LEVEL ${nextLevel + 1} ${key}`);
+                        } else {
+                            cell.quarterWalls.push({ x: slotX, z: slotZ, v: integratedEditorWallWallpaperIndex, lv: [0] });
+                            integratedEditorShowToast(`QUARTER-WALL PLACED ${key} [${slotX.toFixed(1)}, ${slotZ.toFixed(1)}]`);
+                        }
+                        cell.h = false;
+                        return true;
+                    }
+                    if (existingIndex >= 0) {
+                        const levels = integratedEditorGetQuarterWallLevels(cell.quarterWalls[existingIndex]);
+                        levels.shift();
+                        if (levels.length) cell.quarterWalls[existingIndex].lv = levels;
+                        else cell.quarterWalls.splice(existingIndex, 1);
+                        if (!cell.quarterWalls.length) delete cell.quarterWalls;
+                        integratedEditorShowToast(`QUARTER-WALL REMOVED / BOTTOM FIRST ${key}`);
+                        return true;
+                    }
+                    integratedEditorShowToast('NO QUARTER-WALL AT THIS SLOT');
+                    return false;
                 }
 
                 if (integratedEditorHalfWallMode) {
@@ -7347,7 +7628,12 @@
                     const orientation = Math.abs(slotX) >= Math.abs(slotZ) ? 'x' : 'z';
                     const slotKey = `${slotX.toFixed(3)},${slotZ.toFixed(3)}`;
                     const existingIndex = cell.halfWalls.findIndex(hw => `${Number(hw.x || 0).toFixed(3)},${Number(hw.z || 0).toFixed(3)}` === slotKey);
+                    const quarterWallAtSlot = (Array.isArray(cell.quarterWalls) ? cell.quarterWalls : []).find(qw => `${Number(qw.x || 0).toFixed(3)},${Number(qw.z || 0).toFixed(3)}` === slotKey);
                     if (action === 'left') {
+                        if (quarterWallAtSlot) {
+                            integratedEditorShowToast('REMOVE QUARTER-WALL AT THIS SLOT FIRST');
+                            return false;
+                        }
                         if (existingIndex >= 0) {
                             const hwEntry = cell.halfWalls[existingIndex];
                             const hwLevels = integratedEditorGetHalfWallLevels(hwEntry);
@@ -7421,6 +7707,7 @@
                     cell.wv = integratedEditorWallWallpaperIndex;
                     cell.h = false;
                     cell.halfWalls = [];
+                    cell.quarterWalls = [];
                     cell.stairs = null;
                     cell.wallOpenEdges = [];
                     cell.pitOpenEdges = [];
@@ -7531,8 +7818,8 @@
                     light.shadow.mapSize.width = spec.shadowMapSize;
                     light.shadow.mapSize.height = spec.shadowMapSize;
                 }
-                light.shadow.bias = 0.0;
-                light.shadow.normalBias = 0.05;
+                light.shadow.bias = -0.0002;
+                light.shadow.normalBias = 0.025;
                 light.shadow.camera.near = 0.1;
                 light.shadow.camera.far = Math.max(25, spec.distance || 25);
                 light.userData.gameMapLight = true;
@@ -7542,6 +7829,10 @@
         }
         function integratedEditorRecalculateShadows() {
             if (!renderer) return;
+            if (integratedEditorMode) {
+                integratedEditorShowToast('SHADOWS ARE DISABLED IN MAP MAKER');
+                return;
+            }
             scene.traverse(object => {
                 if (object && object.shadow && object.shadow.map) {
                     object.shadow.map.dispose();
@@ -7550,19 +7841,16 @@
                 }
             });
             if (renderer.shadowMap) {
-                const wasEnabled = renderer.shadowMap.enabled;
-                renderer.shadowMap.enabled = false;
-                renderer.shadowMap.enabled = wasEnabled;
+                renderer.shadowMap.enabled = true;
                 renderer.shadowMap.needsUpdate = true;
             }
-            if (integratedEditorMode) {
-                integratedEditorBuildPointLights();
-                integratedEditorUpdateTargetPreview();
+            if (integratedEditorCustomCartographyActive) {
+                integratedEditorBuildPointLights(true);
             } else {
                 reloadAllGameLights();
             }
             try { renderer.render(scene, camera); } catch (error) { console.warn('Shadow recalculation render failed:', error); }
-            integratedEditorShowToast('SHADOW MAPS RECALCULATED / RE-DONE');
+            integratedEditorShowToast('GAMEPLAY LIGHTS REFRESHED');
         }
 
         function integratedEditorReloadEverything() {
@@ -7588,7 +7876,7 @@
             if (renderer && renderer.shadowMap) {
                 renderer.shadowMap.needsUpdate = true;
             }
-            integratedEditorShowToast('EDITOR GEOMETRY / LIGHTS / SHADOWS REBUILT');
+            integratedEditorShowToast('EDITOR GEOMETRY / LIGHTS REBUILT / SHADOWS DISABLED');
         }
 
         function integratedEditorEnter() {
@@ -8215,7 +8503,21 @@
             window.setTimeout(integratedEditorUiHeartbeat, 500);
         }
 
-        integratedEditorInit();
+        try {
+            integratedEditorInit();
+        } catch (error) {
+            console.error('3D Map Maker initialization failed; keeping the main menu/game available.', error);
+            const editorButton = document.getElementById('btn-editor-maker');
+            if (editorButton) {
+                editorButton.disabled = true;
+                editorButton.title = 'Map Maker failed to initialize; see browser console for details.';
+            }
+            const statusText = document.getElementById('status-text');
+            if (statusText) {
+                statusText.textContent = 'MAP MAKER UNAVAILABLE — MAIN MENU READY';
+                statusText.style.color = '#ffff00';
+            }
+        }
         integratedEditorUiHeartbeat();
 
     </script>
